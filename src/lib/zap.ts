@@ -35,8 +35,6 @@ import { deadline, ensureAllowance, fetchSqrtPriceX96, receivedOf, step } from '
 import { txlog } from './txlog'
 import type { ClPool, Pool, TokenInfo, V2Pool } from '../types'
 
-const MINS_BPS = 100 // deposit mins: 1% band-edge, same as the PAIR flows
-
 export type ZapTarget =
   | { kind: 'cl-mint'; pool: ClPool; tickLower: number; tickUpper: number }
   | { kind: 'cl-increase'; pool: ClPool; tickLower: number; tickUpper: number; tokenId: bigint; npm: Address }
@@ -243,7 +241,7 @@ export function zapStages(plan: ZapPlan, target: ZapTarget, t0: TokenInfo, t1: T
 
 // ---------------- executor ----------------
 
-export type ZapRun = { ok: boolean; failedAt: number | null }
+export type ZapRun = { ok: boolean; failedAt: number | null; actualOut: bigint }
 
 /**
  * Execute a planned zap step by step. Re-quotes the swap fresh (the plan's
@@ -256,25 +254,27 @@ export async function executeZap(args: {
   target: ZapTarget
   user: Address
   slipBps: number // swap leg slippage
+  depositSlipBps: number
   t0: TokenInfo
   t1: TokenInfo
+  startAt?: number
+  actualOut?: bigint
   onStage?: (i: number) => void
 }): Promise<ZapRun> {
-  const { plan, target, user, slipBps, t0, t1 } = args
+  const { plan, target, user, slipBps, depositSlipBps, t0, t1 } = args
   const pool = poolOf(target)
   const stages = zapStages(plan, target, t0, t1)
   const tIn = plan.inIs0 ? t0 : t1
   const otherErc20 = plan.inIs0 ? pool.token1 : pool.token0
-  let i = 0
-  const fail = (): ZapRun => ({ ok: false, failedAt: i })
+  let i = args.startAt ?? 0
+  let actualOut = args.actualOut ?? 0n
+  const fail = (): ZapRun => ({ ok: false, failedAt: i, actualOut })
   const abort = (msg: string): ZapRun => {
     txlog.push('err', t('zap.halt', { msg }))
     return fail()
   }
 
-  let actualOut = 0n
-
-  for (i = 0; i < stages.length; i++) {
+  for (; i < stages.length; i++) {
     args.onStage?.(i)
     const st = stages[i]
     switch (st.kind) {
@@ -363,7 +363,7 @@ export async function executeZap(args: {
       case 'deposit': {
         const [dep0, dep1] = depositAmounts(plan, actualOut)
         if (dep0 === 0n && dep1 === 0n) return abort(t('zap.haltNothing'))
-        const ok = await runDeposit(target, user, dep0, dep1, st.label, t0, t1)
+        const ok = await runDeposit(target, user, dep0, dep1, st.label, t0, t1, depositSlipBps)
         if (!ok) return fail()
         break
       }
@@ -379,7 +379,7 @@ export async function executeZap(args: {
       },
     })
   }
-  return { ok: true, failedAt: null }
+  return { ok: true, failedAt: null, actualOut }
 }
 
 /** post-swap deposit amounts: kept side exact, swapped side = what arrived */
@@ -396,6 +396,7 @@ async function runDeposit(
   label: string,
   t0: TokenInfo,
   t1: TokenInfo,
+  slipBps: number,
 ): Promise<boolean> {
   if (target.kind === 'v2') {
     const pool = target.pool
@@ -420,7 +421,7 @@ async function runDeposit(
           abi: uniV2RouterAbi,
           address: UNI.V2_ROUTER,
           functionName: 'addLiquidity',
-          args: [pool.token0, pool.token1, d0, d1, applySlippage(d0, MINS_BPS), applySlippage(d1, MINS_BPS), user, deadline()],
+          args: [pool.token0, pool.token1, d0, d1, applySlippage(d0, slipBps), applySlippage(d1, slipBps), user, deadline()],
           chainId: CHAIN_ID,
         }),
       )
@@ -444,8 +445,8 @@ async function runDeposit(
           pool.stable,
           dep0,
           dep1,
-          applySlippage(quote[0], MINS_BPS),
-          applySlippage(quote[1], MINS_BPS),
+          applySlippage(quote[0], slipBps),
+          applySlippage(quote[1], slipBps),
           user,
           deadline(),
         ],
@@ -465,7 +466,7 @@ async function runDeposit(
     txlog.push('err', t('zap.halt', { msg: t('zap.haltDepositSmall') }))
     return false
   }
-  const mins = minAmountsForLiquidity(sqrtP, sqrtA, sqrtB, liq, MINS_BPS)
+  const mins = minAmountsForLiquidity(sqrtP, sqrtA, sqrtB, liq, slipBps)
 
   if (target.kind === 'cl-increase') {
     const h = await step(`${label} (${t0.symbol}/${t1.symbol})`, () =>

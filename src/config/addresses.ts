@@ -32,5 +32,6 @@ export const UNI = {
 } as const satisfies Record<string, Address>
 
 export const EXPLORER = 'https://robinhoodchain.blockscout.com'
+export const DEXSCREENER = 'https://dexscreener.com/robinhood'
 export const WEEK = 604800
 export const CHAIN_ID = 4663

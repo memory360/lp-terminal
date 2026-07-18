@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi'
 import { readContract, writeContract } from 'wagmi/actions'
 import { parseUnits } from 'viem'
 import { clGaugeAbi, clPmAbi, v2GaugeAbi, v2PoolAbi, v2RouterAbi } from '../../abi'
-import { ADDR, CHAIN_ID, EXPLORER, UNI } from '../../config/addresses'
+import { ADDR, CHAIN_ID, DEXSCREENER, EXPLORER, UNI } from '../../config/addresses'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   MAX_UINT128,
@@ -565,8 +565,12 @@ export function ClCard({
           href={`${EXPLORER}/token/${npm}/instance/${pos.tokenId}`}
           target="_blank"
           rel="noreferrer"
+          title="Explorer"
         >
           #{pos.tokenId.toString()}↗
+        </a>
+        <a className="dim mono-sm" href={`${DEXSCREENER}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
+          🦅
         </a>
         {pos.staked ? <Badge tone="green">{t('pos.staked')}</Badge> : <Badge tone="amber">{t('pos.wallet')}</Badge>}
         {limitTag && <Badge tone="cyan">{t('pos.limitBadge', { sell: limitTag.sellSym, buy: limitTag.buySym })}</Badge>}
@@ -1067,8 +1071,11 @@ export function V2Card({
         <Badge tone="cyan">
           {pos.pool.stable ? 'v2 stable' : 'v2 volatile'} · {(pos.pool.feeBps / 100).toFixed(2)}%
         </Badge>
-        <a className="dim mono-sm" href={`${EXPLORER}/address/${pos.pool.address}`} target="_blank" rel="noreferrer">
+        <a className="dim mono-sm" href={`${EXPLORER}/address/${pos.pool.address}`} target="_blank" rel="noreferrer" title="Explorer">
           {shortAddr(pos.pool.address)}↗
+        </a>
+        <a className="dim mono-sm" href={`${DEXSCREENER}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
+          🦅
         </a>
         <div className="card-actions">
           {gaugeOk && pos.walletLp > 0n && (

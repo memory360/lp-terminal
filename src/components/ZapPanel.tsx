@@ -39,14 +39,20 @@ export function ZapPanel(props: {
   const [amtStr, setAmtStr] = useState('')
   const [amount, setAmount] = useState(0n)
   const [slip, setSlip] = useState(100)
+  const [depositSlip, setDepositSlip] = useState(100)
   const [running, setRunning] = useState(false)
-  const [runAt, setRunAt] = useState<{ i: number; failed: boolean } | null>(null)
+  const [runAt, setRunAt] = useState<{ i: number; failed: boolean; actualOut: bigint } | null>(null)
   const [runPlan, setRunPlan] = useState<ZapPlan | null>(null)
+  const [runKey, setRunKey] = useState('')
   const [done, setDone] = useState(false)
 
   const tokenInAddr: Address = sel === 'eth' ? NATIVE : sel === '0' ? t0.address : t1.address
   const tIn: TokenInfo =
     sel === 'eth' ? { address: NATIVE, symbol: 'ETH', decimals: 18, native: true } : sel === '0' ? t0 : t1
+  const wethInputUsd =
+    (sel === 'eth' || tIn.address.toLowerCase() === ADDR.WETH.toLowerCase()) && props.wethUsd
+      ? Number(amtStr) * props.wethUsd
+      : NaN
 
   useEffect(() => {
     const h = setTimeout(() => {
@@ -67,6 +73,8 @@ export function ZapPanel(props: {
   // ticks key parts (cl targets re-plan when the parent's range changes)
   const lo = target.kind === 'v2' ? 0 : target.tickLower
   const hi = target.kind === 'v2' ? 0 : target.tickUpper
+  const currentKey = `${pool.address}:${lo}:${hi}:${tokenInAddr}:${amount}`
+  const canResume = !!runAt?.failed && !!runPlan && runKey === currentKey
 
   const plan = useQuery({
     queryKey: ['zapPlan', pool.address, lo, hi, tokenInAddr, amount.toString()],
@@ -76,7 +84,7 @@ export function ZapPanel(props: {
     retry: 1,
     queryFn: ({ signal }) => planZap({ target, tokenIn: tokenInAddr, amountIn: amount, signal }),
   })
-  const p = running ? runPlan : (plan.data ?? null)
+  const p = running || canResume ? runPlan : (plan.data ?? null)
   const stages = useMemo(() => (p ? zapStages(p, target, t0, t1) : []), [p, target, t0, t1])
   const tOut = p ? (p.inIs0 ? t1 : t0) : null
 
@@ -137,35 +145,46 @@ export function ZapPanel(props: {
     if (!user || amount === 0n || running) return
     setRunning(true)
     setDone(false)
-    setRunAt({ i: 0, failed: false })
     try {
-      // plan fresh for execution — the preview may be up to 30s old
-      let fresh: ZapPlan
-      try {
-        fresh = await planZap({ target, tokenIn: tokenInAddr, amountIn: amount })
-      } catch (e) {
-        txlog.push('err', t('zap.replanFailed', { err: (e as Error).message }))
-        setRunAt({ i: 0, failed: true })
-        setRunPlan(null)
-        return
+      let fresh = runPlan
+      let startAt = runAt?.i ?? 0
+      let actualOut = runAt?.actualOut ?? 0n
+      if (!canResume) {
+        startAt = 0
+        actualOut = 0n
+        try {
+          fresh = await planZap({ target, tokenIn: tokenInAddr, amountIn: amount })
+        } catch (e) {
+          txlog.push('err', t('zap.replanFailed', { err: (e as Error).message }))
+          setRunAt({ i: 0, failed: true, actualOut: 0n })
+          setRunPlan(null)
+          return
+        }
+        setRunPlan(fresh)
+        setRunKey(currentKey)
       }
-      setRunPlan(fresh)
+      if (!fresh) return
+      setRunAt({ i: startAt, failed: false, actualOut })
       const res = await executeZap({
         plan: fresh,
         target,
         user,
         slipBps: slip,
+        depositSlipBps: depositSlip,
         t0,
         t1,
-        onStage: (i) => setRunAt({ i, failed: false }),
+        startAt,
+        actualOut,
+        onStage: (i) => setRunAt({ i, failed: false, actualOut }),
       })
       if (res.ok) {
         setRunAt(null)
         setRunPlan(null)
+        setRunKey('')
         setDone(true)
         setAmtStr('')
       } else {
-        setRunAt({ i: res.failedAt ?? 0, failed: true })
+        setRunAt({ i: res.failedAt ?? 0, failed: true, actualOut: res.actualOut })
       }
     } finally {
       setRunning(false)
@@ -195,6 +214,9 @@ export function ZapPanel(props: {
           </button>
         )}
         <NumInput value={amtStr} onChange={setAmtStr} disabled={running} width={220} />
+        <span className="zap-usd mono-sm">
+          {Number.isFinite(wethInputUsd) && wethInputUsd > 0 ? t('zap.usdValue', { usd: fmtUsd(wethInputUsd) }) : ''}
+        </span>
         {spendable !== undefined && (
           <>
             <span className="dim mono-sm">
@@ -215,6 +237,15 @@ export function ZapPanel(props: {
           </button>
         ))}
         <span className="dim mono-sm">{t('zap.slipHint')}</span>
+      </div>
+      <div className="form-row">
+        <span className="lbl">{t('zap.depositSlip')}</span>
+        {[100, 300, 500].map((b) => (
+          <button key={b} className={`chip ${depositSlip === b ? 'on' : ''}`} onClick={() => setDepositSlip(b)} disabled={running}>
+            {b / 100}%
+          </button>
+        ))}
+        <span className="dim mono-sm">{t('zap.depositSlipHint')}</span>
       </div>
 
       {amount > 0n && plan.isLoading && (
@@ -347,9 +378,11 @@ export function ZapPanel(props: {
       {done && <div className="green mono-sm">{t('zap.done')}</div>}
 
       <div className="form-row">
-        <Btn busy={running} onClick={run} disabled={!user || amount === 0n || !plan.data || insufficient || running}>
+        <Btn busy={running} onClick={run} disabled={!user || amount === 0n || (!canResume && (!plan.data || insufficient)) || running}>
           {!user
             ? t('common.connectWallet')
+            : canResume
+              ? t('zap.retryFrom', { n: (runAt?.i ?? 0) + 1 })
             : stages.length > 0
               ? t('zap.runTx', { n: stages.length })
               : t('zap.run')}

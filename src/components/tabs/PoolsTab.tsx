@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi'
 import { readContract, writeContract } from 'wagmi/actions'
 import { formatUnits, parseUnits } from 'viem'
 import { clPmAbi, uniV2RouterAbi, uniV3PmAbi, v2RouterAbi } from '../../abi'
-import { ADDR, CHAIN_ID, EXPLORER, UNI, WEEK } from '../../config/addresses'
+import { ADDR, CHAIN_ID, DEXSCREENER, EXPLORER, UNI, WEEK } from '../../config/addresses'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   alignTick,
@@ -24,12 +24,14 @@ import {
   feeAprOf,
   fees24Of,
   fmtApr,
+  rangeHourlyEarnings,
   simulateClAdd,
   simulateV2Add,
   stakedShareOf,
   type AddSim,
 } from '../../lib/apr'
 import { fmtAmount, fmtCompactAmount, fmtNum, fmtUsd, nowSec } from '../../lib/format'
+import { clPosMetrics, v2PosMetrics } from '../../lib/posmetrics'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, step } from '../../lib/tx'
 import { useBalances } from '../../hooks/useBalances'
 import { usePositions } from '../../hooks/usePositions'
@@ -49,6 +51,7 @@ const SLIP_BPS = 100
 
 type SortKey = 'vol' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
 type ProtoFilter = 'all' | 'up33' | 'univ3' | 'univ2'
+type PoolPositionCell = { valueUsd: number | null; tokenIds: bigint[]; protocol: Pool['protocol'] }
 
 export function PoolsTab() {
   const { t } = useTranslation()
@@ -111,6 +114,51 @@ export function PoolsTab() {
   const byPool = stats.data?.byPool
   const uniStats = uni.data?.stats
   const statOf = (p: Pool) => byPool?.[p.address.toLowerCase()] ?? uniStats?.[p.address.toLowerCase()]
+  const positionsByPool = new Map<string, PoolPositionCell>()
+  const addPosition = (p: Pool, valueUsd: number | null, tokenId?: bigint) => {
+    const key = p.address.toLowerCase()
+    const old = positionsByPool.get(key)
+    if (!old) positionsByPool.set(key, { valueUsd, tokenIds: tokenId === undefined ? [] : [tokenId], protocol: p.protocol })
+    else {
+      old.valueUsd = old.valueUsd !== null && valueUsd !== null ? old.valueUsd + valueUsd : null
+      if (tokenId !== undefined) old.tokenIds.push(tokenId)
+    }
+  }
+  for (const pos of positions.data?.cl ?? []) {
+    const t0 = positions.data?.tokens[pos.pool.token0.toLowerCase()] ?? data.tokens[pos.pool.token0.toLowerCase()]
+    const t1 = positions.data?.tokens[pos.pool.token1.toLowerCase()] ?? data.tokens[pos.pool.token1.toLowerCase()]
+    if (!t0 || !t1) addPosition(pos.pool, null, pos.tokenId)
+    else {
+      const m = clPosMetrics({
+        pos,
+        amount0: pos.amount0,
+        amount1: pos.amount1,
+        tick: pos.pool.tick,
+        dec0: t0.decimals,
+        dec1: t1.decimals,
+        stat: statOf(pos.pool),
+        upUsd: upPrice.data,
+        wethUsd: stats.data?.wethUsd,
+      })
+      addPosition(pos.pool, m.valueUsd === null ? null : m.valueUsd + (m.feesUsd ?? 0), pos.tokenId)
+    }
+  }
+  for (const pos of positions.data?.v2 ?? []) {
+    const t0 = data.tokens[pos.pool.token0.toLowerCase()]
+    const t1 = data.tokens[pos.pool.token1.toLowerCase()]
+    const m =
+      t0 && t1
+        ? v2PosMetrics({
+            pos,
+            dec0: t0.decimals,
+            dec1: t1.decimals,
+            stat: statOf(pos.pool),
+            upUsd: upPrice.data,
+            wethUsd: stats.data?.wethUsd,
+          })
+        : null
+    addPosition(pos.pool, m?.valueUsd === undefined || m.valueUsd === null ? null : m.valueUsd + (m.feesUsd ?? 0))
+  }
   let list = [...pools.data.pools, ...(uni.data?.pools ?? [])].filter((p) => {
     if (onlyMine && !mySet.has(p.address.toLowerCase())) return false
     if (proto !== 'all' && p.protocol !== proto) return false
@@ -219,10 +267,12 @@ export function PoolsTab() {
             <tr>
               <th>{t('pools.thPair')}</th>
               <th>{t('pools.thPrice')}</th>
+              <th className="num">{t('pools.thLpPosition')}</th>
               {th('tvl', t('pools.thTvl'))}
               {th('vol', t('pools.thVol'))}
               {th('fees24', t('pools.thFees'))}
               {th('feeApr', t('pools.thFeeApr'))}
+              <th className="num">{t('pools.thRangeEarnings')}</th>
               {th('rewards', t('pools.thRewards'))}
               <th></th>
             </tr>
@@ -238,6 +288,7 @@ export function PoolsTab() {
                 wethUsd={stats.data?.wethUsd}
                 totalWeight={totalWeight}
                 mine={mySet.has(p.address.toLowerCase())}
+                position={positionsByPool.get(p.address.toLowerCase())}
                 open={open === p.address}
                 onToggle={() => setOpen(open === p.address ? null : p.address)}
                 rewardsSub={proto === 'up33'}
@@ -261,6 +312,7 @@ function PoolRow(props: {
   wethUsd?: number | null
   totalWeight: bigint
   mine: boolean
+  position?: PoolPositionCell
   open: boolean
   onToggle: () => void
   /** UP33 filter view: show the emissions detail sub-line (wide column) */
@@ -276,6 +328,7 @@ function PoolRow(props: {
   const votePct = totalWeight > 0n ? Number((p.weight * 1_000_000n) / totalWeight) / 10_000 : 0
   const fees24 = fees24Of(p, stat)
   const feeApr = feeAprOf(p, stat)
+  const rangeEarnings = rangeHourlyEarnings(p, stat)
   const emitApr = emitAprOf(p, stat, props.upUsd)
   const stakedPct = stakedShareOf(p) * 100
 
@@ -340,6 +393,9 @@ function PoolRow(props: {
           )}
         </td>
         <td className="num">
+          {props.position ? <PoolPositionLink position={props.position} /> : <span className="dim">—</span>}
+        </td>
+        <td className="num">
           {stat?.liqUsd != null && stat.liqUsd > 0 ? fmtUsd(stat.liqUsd) : <span className="dim">—</span>}
         </td>
         <td className="num">
@@ -350,6 +406,15 @@ function PoolRow(props: {
         </td>
         <td className="num" title="unstaked LP net fee yield (staked LPs earn 0 fees)">
           {feeApr != null ? fmtApr(feeApr) : <span className="dim">—</span>}
+        </td>
+        <td className="num" title="estimate: $1000 LP with 10% range, hourly earnings">
+          {rangeEarnings != null && rangeEarnings > 0 ? (
+            <span className={rangeEarnings > 200 ? 'red' : rangeEarnings > 100 ? 'range-warm' : 'amber'}>
+              ${rangeEarnings.toFixed(2)}
+            </span>
+          ) : (
+            <span className="dim">—</span>
+          )}
         </td>
         <td className="num" title={t('pools.rewardsTip')}>
           {p.protocol === 'up33' ? (
@@ -371,14 +436,26 @@ function PoolRow(props: {
           <Btn tone="ghost" onClick={props.onToggle}>
             {props.open ? t('common.close') : t('pools.addLp')}
           </Btn>{' '}
-          <a href={`${EXPLORER}/address/${p.address}`} target="_blank" rel="noreferrer" className="dim">
+          <a href={`${EXPLORER}/address/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="Explorer">
             ↗
+          </a>{' '}
+          <a href={`${DEXSCREENER}/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="DexScreener">
+            🦅
+          </a>{' '}
+          <a
+            href={`https://www.geckoterminal.com/robinhood/pools/${p.address}`}
+            target="_blank"
+            rel="noreferrer"
+            className="dim"
+            title="GeckoTerminal"
+          >
+            🦎
           </a>
         </td>
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={8}>
+          <td colSpan={10}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (
@@ -388,6 +465,20 @@ function PoolRow(props: {
         </tr>
       )}
     </>
+  )
+}
+
+function PoolPositionLink({ position }: { position: PoolPositionCell }) {
+  const count = position.tokenIds.length
+  const label = `LP${count > 1 ? `×${count}` : ''}(${position.valueUsd === null ? '—' : fmtUsd(position.valueUsd)})`
+  const href =
+    position.protocol === 'univ3'
+      ? `https://app.uniswap.org/positions/v3/robinhood${count === 1 ? `/${position.tokenIds[0]}` : ''}`
+      : '#positions'
+  return (
+    <a href={href} target={position.protocol === 'univ3' ? '_blank' : undefined} rel="noreferrer">
+      {label}↗
+    </a>
   )
 }
 

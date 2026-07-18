@@ -26,6 +26,17 @@ export function feeAprOf(p: Pool, stat?: PoolStat): number | null {
   return ((stat.vol24hUsd * feeFrac * keep * 365) / stat.liqUsd) * 100
 }
 
+/** estimate 1-hour earnings for $1000 LP with 10% range (CL pools) or full position (V2) */
+export function rangeHourlyEarnings(p: Pool, stat?: PoolStat, pct: number = 0.1): number | null {
+  if (stat?.vol24hUsd == null || stat.liqUsd == null || stat.liqUsd <= 0 || pct <= 0) return null
+  const feeFrac = p.kind === 'v2' ? p.feeBps / 10_000 : p.feePpm / 1e6
+  const keep = p.kind === 'cl' ? 1 - p.unstakedFeePpm / 1e6 : 1
+  const concentration = p.kind === 'v2' ? 1 : 1 / (1 - 1 / Math.sqrt(1 + pct))
+  const effectiveDeposit = 1000 * concentration
+  const share = effectiveDeposit / (stat.liqUsd + effectiveDeposit)
+  return (stat.vol24hUsd * feeFrac * keep * share) / 24
+}
+
 export function stakedShareOf(p: Pool): number {
   if (p.kind === 'v2') return p.totalSupply > 0n ? Number(p.gaugeTotalSupply) / Number(p.totalSupply) : 0
   return p.liquidity > 0n ? Number(p.stakedLiquidity) / Number(p.liquidity) : 0

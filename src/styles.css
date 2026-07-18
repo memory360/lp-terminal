@@ -282,6 +282,7 @@ button, input, select {
 .green { color: var(--green); }
 .amber { color: var(--amber); }
 .red { color: var(--red); }
+.range-warm { color: color-mix(in srgb, var(--red) 65%, var(--amber)); }
 .cyan { color: var(--cyan); }
 .right { text-align: right; }
 .mono-sm { font-size: 0.88em; }
@@ -612,6 +613,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 }
 .form-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
 .form-row .lbl { width: 110px; color: var(--dim); font-size: 0.9em; text-transform: uppercase; }
+.zap-usd { min-width: 120px; color: var(--dim); white-space: nowrap; }
 .chip {
   background: none;
   border: 1px solid var(--line-hi);
@@ -656,7 +658,7 @@ th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--fg); }
 th.sortable.on { color: var(--acc); }
 
-.mydot { color: var(--acc); margin-right: 4px; }
+.mydot { color: var(--green); margin-right: 4px; }
 
 /* pools table: compact two-line cells */
 .pair-sub {
