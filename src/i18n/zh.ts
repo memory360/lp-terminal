@@ -53,8 +53,8 @@ export const zh: typeof en = {
   lang: { label: 'lang:' },
   rbar: {
     inRange: '区间内 · 已穿过 {{pct}}% · 带宽 ±{{band}}%',
-    outRise: '超出区间 · 价格需上涨 {{pct}}% 才能回到区间',
-    outFall: '超出区间 · 价格需下跌 {{pct}}% 才能回到区间',
+    outRise: '超出区间 · 带宽 ±{{band}}% · 价格需上涨 {{pct}}% 才能回到区间',
+    outFall: '超出区间 · 带宽 ±{{band}}% · 价格需下跌 {{pct}}% 才能回到区间',
     orderFilled: '订单已完全成交 · 100% 持有 {{sym}} — 提取以锁定',
     orderFilling: '订单成交中 · {{sym}} 已卖出 {{pct}}% · 价格回落会回吐',
     orderWaitRise: '订单等待中 · 价格需上涨 {{pct}}% 开始成交',

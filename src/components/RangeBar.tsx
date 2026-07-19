@@ -111,10 +111,10 @@ export function RangeBar(props: {
     statusText = t('rbar.inRange', { pct: posPct.toFixed(1), band: fmtNum(bandPct, 3) })
     statusTone = nearEdge ? 'amber' : 'green'
   } else if (dCur < dLower) {
-    statusText = t('rbar.outRise', { pct: fmtNum(toLeft, 3) })
+    statusText = t('rbar.outRise', { pct: fmtNum(toLeft, 3), band: fmtNum(bandPct, 3) })
     statusTone = 'red'
   } else {
-    statusText = t('rbar.outFall', { pct: fmtNum(Math.abs(toRight), 3) })
+    statusText = t('rbar.outFall', { pct: fmtNum(Math.abs(toRight), 3), band: fmtNum(bandPct, 3) })
     statusTone = 'red'
   }
 

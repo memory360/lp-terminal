@@ -52,8 +52,8 @@ export const en = {
   lang: { label: 'lang:' },
   rbar: {
     inRange: 'IN RANGE · {{pct}}% through · band ±{{band}}%',
-    outRise: 'OUT OF RANGE · price must rise {{pct}}% to re-enter',
-    outFall: 'OUT OF RANGE · price must fall {{pct}}% to re-enter',
+    outRise: 'OUT OF RANGE · band ±{{band}}% · price must rise {{pct}}% to re-enter',
+    outFall: 'OUT OF RANGE · band ±{{band}}% · price must fall {{pct}}% to re-enter',
     orderFilled: 'ORDER FULLY FILLED · holding 100% {{sym}} — withdraw to lock in',
     orderFilling: 'ORDER FILLING · {{pct}}% of {{sym}} sold · un-fills if price retreats',
     orderWaitRise: 'ORDER WAITING · price must rise {{pct}}% to start filling',

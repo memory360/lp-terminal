@@ -652,7 +652,7 @@ export function ClCard({
           <span className="k">{t('pos.value')}</span>
           {m.valueUsd !== null ? (
             <Flash v={m.valueUsd}>
-              <b>{fmtUsd(m.valueUsd)}</b>
+              <b className="amber">{fmtUsd(m.valueUsd)}</b>
             </Flash>
           ) : (
             <span className="dim">{t('pos.noAnchor')}</span>
@@ -1109,7 +1109,7 @@ export function V2Card({
       <div className="kv mono-sm">
         <span>
           <span className="k">{t('pos.value')}</span>
-          {m.valueUsd !== null ? <b>{fmtUsd(m.valueUsd)}</b> : <span className="dim">{t('pos.noAnchor')}</span>}
+          {m.valueUsd !== null ? <b className="amber">{fmtUsd(m.valueUsd)}</b> : <span className="dim">{t('pos.noAnchor')}</span>}
         </span>
         <span>
           <span className="k">{t('pos.v2Total')}</span>
