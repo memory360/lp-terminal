@@ -29,7 +29,7 @@ type SwapMode = 'market' | 'limit'
 export function SwapTab() {
   const { t } = useTranslation()
   const { address: user } = useAccount()
-  const list = useTokenList()
+  const list = useTokenList(user)
 
   const [mode, setModeState] = useState<SwapMode>(() => (location.hash === '#limit' ? 'limit' : 'market'))
   const [tIn, setTIn] = useState<TokenInfo | null>(null)
@@ -506,4 +506,3 @@ export function SwapTab() {
     </div>
   )
 }
-
