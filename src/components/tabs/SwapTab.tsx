@@ -15,6 +15,7 @@ import { peekSwapIntent, takeSwapIntent } from '../../lib/swapIntent'
 import { deadline, ensureAllowance, step } from '../../lib/tx'
 import { txlog } from '../../lib/txlog'
 import { useBalances } from '../../hooks/useBalances'
+import { usePoolStats } from '../../hooks/usePoolStats'
 import { erc20Of, isNative, useKyberQuote, useNativeQuote } from '../../hooks/useQuotes'
 import { useTokenList } from '../../hooks/useTokenList'
 import type { TokenInfo } from '../../types'
@@ -30,6 +31,7 @@ export function SwapTab() {
   const { t } = useTranslation()
   const { address: user } = useAccount()
   const list = useTokenList(user)
+  const stats = usePoolStats()
 
   const [mode, setModeState] = useState<SwapMode>(() => (location.hash === '#limit' ? 'limit' : 'market'))
   const [tIn, setTIn] = useState<TokenInfo | null>(null)
@@ -298,6 +300,16 @@ export function SwapTab() {
 
   const usdIn = kyber.data?.routeSummary.amountInUsd
   const usdOut = kyber.data?.routeSummary.amountOutUsd
+  const isEthOut = !!tOut.native || tOut.address.toLowerCase() === ADDR.WETH.toLowerCase()
+  const ethUsdOf = (out?: bigint) =>
+    out !== undefined && stats.data?.wethUsd
+      ? Number(formatUnits(out, tOut.decimals)) * stats.data.wethUsd
+      : null
+  const selectedOutUsd = isEthOut
+    ? ethUsdOf(isWrap || isUnwrap ? amount : selOut)
+    : usdOut
+      ? Number(usdOut)
+      : null
 
   return (
     <div className="swap-box">
@@ -355,7 +367,7 @@ export function SwapTab() {
           <span>
             {t('common.bal')} {balOut !== undefined ? fmtAmount(balOut, tOut.decimals) : '—'}
           </span>
-          <span>{amount > 0n && usdOut && !isWrap && !isUnwrap ? `≈ ${fmtUsd(usdOut)}` : ''}</span>
+          <span>{selectedOutUsd !== null && selectedOutUsd > 0 ? `≈ ${fmtUsd(selectedOutUsd)} U` : ''}</span>
         </div>
       </div>
 
@@ -401,6 +413,9 @@ export function SwapTab() {
                     <span className="out green">
                       {fmtAmount(kyberOut, tOut.decimals)} {tOut.symbol}
                     </span>
+                    {isEthOut && ethUsdOf(kyberOut) !== null && (
+                      <span className="dim mono-sm">≈ {fmtUsd(ethUsdOf(kyberOut)!)} U</span>
+                    )}
                     <span className="dim mono-sm">{t('swap.gas', { usd: fmtUsd(kyber.data!.routeSummary.gasUsd) || '—' })}</span>
                     <span className="dim mono-sm">{routeBreakdown(kyber.data!.routeSummary)}</span>
                     {auto === 'kyber' && <Badge tone="green">{t('swap.best')}</Badge>}
@@ -420,6 +435,9 @@ export function SwapTab() {
                     <span className="out">
                       {fmtAmount(nativeBest.amountOut, tOut.decimals)} {tOut.symbol}
                     </span>
+                    {isEthOut && ethUsdOf(nativeBest.amountOut) !== null && (
+                      <span className="dim mono-sm">≈ {fmtUsd(ethUsdOf(nativeBest.amountOut)!)} U</span>
+                    )}
                     <span className="dim mono-sm">
                       {nativeBest.kind === 'v2'
                         ? t('swap.viaV2', {
