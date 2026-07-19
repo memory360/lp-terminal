@@ -674,6 +674,9 @@ th.sortable.on { color: var(--acc); }
   color: var(--dim);
   margin-top: 1px;
 }
+.token-info .pair-sub { display: block; }
+.token-copy { padding: 0; border: 0; background: none; color: var(--dim); cursor: pointer; }
+.token-copy:hover { color: var(--fg); }
 .tbl td { padding: 6px 8px; }
 
 /* projected APR line in add-LP panels */

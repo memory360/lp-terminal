@@ -30,7 +30,7 @@ import {
   stakedShareOf,
   type AddSim,
 } from '../../lib/apr'
-import { fmtAmount, fmtCompactAmount, fmtNum, fmtUsd, nowSec } from '../../lib/format'
+import { fmtAmount, fmtCompactAmount, fmtNum, fmtUsd, nowSec, shortAddr } from '../../lib/format'
 import { clPosMetrics, v2PosMetrics } from '../../lib/posmetrics'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, step } from '../../lib/tx'
 import { useBalances } from '../../hooks/useBalances'
@@ -267,6 +267,7 @@ export function PoolsTab() {
             <tr>
               <th>{t('pools.thPair')}</th>
               <th>{t('pools.thPrice')}</th>
+              <th>{t('pools.thTokenInfo')}</th>
               <th className="num">{t('pools.thLpPosition')}</th>
               {th('tvl', t('pools.thTvl'))}
               {th('vol', t('pools.thVol'))}
@@ -392,6 +393,9 @@ function PoolRow(props: {
             <PxCell sqrtPriceX96={p.sqrtPriceX96} d0={t0.decimals} d1={t1.decimals} s0={t0.symbol} s1={t1.symbol} />
           )}
         </td>
+        <td>
+          <TokenInfoCell token={projectTokenOf(t0, t1)} />
+        </td>
         <td className="num">
           {props.position ? <PoolPositionLink position={props.position} /> : <span className="dim">—</span>}
         </td>
@@ -455,7 +459,7 @@ function PoolRow(props: {
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={10}>
+          <td colSpan={11}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (
@@ -465,6 +469,33 @@ function PoolRow(props: {
         </tr>
       )}
     </>
+  )
+}
+
+function projectTokenOf(t0: PoolsData['tokens'][string], t1: PoolsData['tokens'][string]) {
+  const anchors = new Set([ADDR.WETH.toLowerCase(), ADDR.USDG.toLowerCase(), ADDR.UP.toLowerCase()])
+  if (anchors.has(t0.address.toLowerCase()) && !anchors.has(t1.address.toLowerCase())) return t1
+  return t0
+}
+
+function TokenInfoCell({ token }: { token: PoolsData['tokens'][string] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="token-info">
+      <b>{token.symbol}</b>
+      <span className="pair-sub">
+        <a href={`${EXPLORER}/address/${token.address}`} target="_blank" rel="noreferrer" title="Explorer">
+          {shortAddr(token.address)}
+        </a>{' '}
+        <button
+          className="token-copy"
+          title={t('pools.copyTokenAddress')}
+          onClick={() => void navigator.clipboard.writeText(token.address).catch(() => undefined)}
+        >
+          ⧉
+        </button>
+      </span>
+    </div>
   )
 }
 
