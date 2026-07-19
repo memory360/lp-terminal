@@ -113,6 +113,7 @@ export const en = {
     thTvl: 'TVL',
     thVol: 'VOL 24H',
     thFees: 'FEES 24H',
+    thFees1h: 'FEES 1H',
     thFeeApr: 'FEE APR',
     thRangeEarnings: '10%R-H-K',
     thRewards: 'REWARDS',

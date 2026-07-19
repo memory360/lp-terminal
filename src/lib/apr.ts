@@ -18,6 +18,12 @@ export function fees24Of(p: Pool, stat?: PoolStat): number | null {
   return (stat.vol24hUsd * feePct) / 100
 }
 
+export function fees1hOf(p: Pool, stat?: PoolStat): number | null {
+  if (stat?.vol1hUsd == null) return null
+  const feeFrac = p.kind === 'v2' ? p.feeBps / 10_000 : p.feePpm / 1e6
+  return stat.vol1hUsd * feeFrac
+}
+
 /** pool-average fee APR for an UNSTAKED LP (net of the CL unstaked levy) */
 export function feeAprOf(p: Pool, stat?: PoolStat): number | null {
   if (stat?.vol24hUsd == null || stat.liqUsd == null || stat.liqUsd <= 0) return null
@@ -28,13 +34,13 @@ export function feeAprOf(p: Pool, stat?: PoolStat): number | null {
 
 /** estimate 1-hour earnings for $1000 LP with 10% range (CL pools) or full position (V2) */
 export function rangeHourlyEarnings(p: Pool, stat?: PoolStat, pct: number = 0.1): number | null {
-  if (stat?.vol24hUsd == null || stat.liqUsd == null || stat.liqUsd <= 0 || pct <= 0) return null
+  if (stat?.vol1hUsd == null || stat.liqUsd == null || stat.liqUsd <= 0 || pct <= 0) return null
   const feeFrac = p.kind === 'v2' ? p.feeBps / 10_000 : p.feePpm / 1e6
   const keep = p.kind === 'cl' ? 1 - p.unstakedFeePpm / 1e6 : 1
   const concentration = p.kind === 'v2' ? 1 : 1 / (1 - 1 / Math.sqrt(1 + pct))
   const effectiveDeposit = 1000 * concentration
   const share = effectiveDeposit / (stat.liqUsd + effectiveDeposit)
-  return (stat.vol24hUsd * feeFrac * keep * share) / 24
+  return stat.vol1hUsd * feeFrac * keep * share
 }
 
 export function stakedShareOf(p: Pool): number {

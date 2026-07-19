@@ -27,6 +27,7 @@ type ApiPool = {
   totalSupply: string | null
   tvlUsd: number | null
   vol24hUsd: number | null
+  vol1hUsd: number | null
   txns24h: number | null
   gtLiqUsd: number | null
   statsSource: string | null
@@ -110,6 +111,7 @@ export async function fetchUniIndex(
     }
     stats[p.address.toLowerCase()] = {
       vol24hUsd: p.vol24hUsd,
+      vol1hUsd: p.vol1hUsd,
       liqUsd: p.tvlUsd ?? p.gtLiqUsd, // chain-derived TVL first, GT reserve as backstop
       source: p.statsSource === 'geckoterminal' ? 'geckoterminal' : 'chain',
     }

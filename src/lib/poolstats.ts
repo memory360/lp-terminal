@@ -9,6 +9,7 @@ import type { Pool, V2Pool } from '../types'
 
 export type PoolStat = {
   vol24hUsd: number | null
+  vol1hUsd?: number | null
   liqUsd: number | null
   source: 'dexscreener' | 'subgraph' | 'geckoterminal' | 'chain'
 }
@@ -38,9 +39,11 @@ async function fetchDexscreener(
       const addr = String(p.pairAddress ?? '').toLowerCase()
       if (!addr) continue
       const vol = Number(p?.volume?.h24)
+      const vol1h = Number(p?.volume?.h1)
       const liq = Number(p?.liquidity?.usd)
       stats[addr] = {
         vol24hUsd: Number.isFinite(vol) ? vol : null,
+        vol1hUsd: Number.isFinite(vol1h) ? vol1h : null,
         liqUsd: Number.isFinite(liq) ? liq : null,
         source: 'dexscreener',
       }
@@ -64,6 +67,7 @@ async function fetchV2Subgraph(
   const q = `{
     pairHourDatas(first: 1000, where: { hourStartUnix_gte: ${now - 86_400} }) {
       pair { id }
+      hourStartUnix
       hourlyVolumeUSD
       hourlyVolumeToken0
       hourlyVolumeToken1
@@ -78,7 +82,7 @@ async function fetchV2Subgraph(
   if (!r.ok) throw new Error(`v2 subgraph ${r.status}`)
   const j = (await r.json()) as {
     data?: {
-      pairHourDatas?: { pair: { id: string }; hourlyVolumeUSD: string; hourlyVolumeToken0: string; hourlyVolumeToken1: string }[]
+      pairHourDatas?: { pair: { id: string }; hourStartUnix: number; hourlyVolumeUSD: string; hourlyVolumeToken0: string; hourlyVolumeToken1: string }[]
       pairs?: { id: string; reserveUSD: string }[]
     }
   }
@@ -89,14 +93,14 @@ async function fetchV2Subgraph(
     const addr = pair.id.toLowerCase()
     if (!byAddr.has(addr)) continue
     const liq = Number(pair.reserveUSD)
-    stats[addr] = { vol24hUsd: 0, liqUsd: Number.isFinite(liq) ? liq : null, source: 'subgraph' }
+    stats[addr] = { vol24hUsd: 0, vol1hUsd: 0, liqUsd: Number.isFinite(liq) ? liq : null, source: 'subgraph' }
   }
   // rolling 24h volume from hour buckets
   for (const h of j.data?.pairHourDatas ?? []) {
     const addr = h.pair.id.toLowerCase()
     const pool = byAddr.get(addr)
     if (!pool) continue
-    const entry = (stats[addr] ??= { vol24hUsd: 0, liqUsd: null, source: 'subgraph' })
+    const entry = (stats[addr] ??= { vol24hUsd: 0, vol1hUsd: 0, liqUsd: null, source: 'subgraph' })
     const tracked = Number(h.hourlyVolumeUSD)
     let usd: number | null = Number.isFinite(tracked) && tracked > 0 ? tracked : null
     if (usd === null) {
@@ -110,7 +114,15 @@ async function fetchV2Subgraph(
       else if (wethUsd !== null && t0 === WETH && Number.isFinite(v0)) usd = v0 * wethUsd
       else if (wethUsd !== null && t1 === WETH && Number.isFinite(v1)) usd = v1 * wethUsd
     }
-    if (usd !== null && entry.vol24hUsd !== null) entry.vol24hUsd += usd
+    if (usd !== null && entry.vol24hUsd !== null) {
+      entry.vol24hUsd += usd
+      // Hour buckets are not rolling. Approximate the trailing 60 minutes by
+      // combining the current bucket with the proportional part of the prior.
+      const currentHour = Math.floor(now / 3600) * 3600
+      const elapsed = now - currentHour
+      const weight = h.hourStartUnix === currentHour ? 1 : h.hourStartUnix === currentHour - 3600 ? (3600 - elapsed) / 3600 : 0
+      if (entry.vol1hUsd !== null) entry.vol1hUsd = (entry.vol1hUsd ?? 0) + usd * weight
+    }
   }
   return stats
 }

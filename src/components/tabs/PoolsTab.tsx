@@ -22,6 +22,7 @@ import {
 import {
   emitAprOf,
   feeAprOf,
+  fees1hOf,
   fees24Of,
   fmtApr,
   rangeHourlyEarnings,
@@ -49,7 +50,7 @@ import { AmountRow, Btn, NumInput } from '../ui'
 
 const SLIP_BPS = 100
 
-type SortKey = 'vol' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
+type SortKey = 'vol' | 'fees1h' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
 type ProtoFilter = 'all' | 'up33' | 'univ3' | 'univ2'
 type PoolPositionCell = { valueUsd: number | null; tokenIds: bigint[]; protocol: Pool['protocol'] }
 
@@ -173,6 +174,7 @@ export function PoolsTab() {
     list = [...list].sort((a, b) => {
       if (sort === 'vol') return (statOf(b)?.vol24hUsd ?? -1) - (statOf(a)?.vol24hUsd ?? -1)
       if (sort === 'fees24') return (fees24Of(b, statOf(b)) ?? -1) - (fees24Of(a, statOf(a)) ?? -1)
+      if (sort === 'fees1h') return (fees1hOf(b, statOf(b)) ?? -1) - (fees1hOf(a, statOf(a)) ?? -1)
       if (sort === 'tvl') return (statOf(b)?.liqUsd ?? -1) - (statOf(a)?.liqUsd ?? -1)
       if (sort === 'feeApr') return (feeAprOf(b, statOf(b)) ?? -1) - (feeAprOf(a, statOf(a)) ?? -1)
       return (
@@ -272,6 +274,7 @@ export function PoolsTab() {
               {th('tvl', t('pools.thTvl'))}
               {th('vol', t('pools.thVol'))}
               {th('fees24', t('pools.thFees'))}
+              {th('fees1h', t('pools.thFees1h'))}
               {th('feeApr', t('pools.thFeeApr'))}
               <th className="num">{t('pools.thRangeEarnings')}</th>
               {th('rewards', t('pools.thRewards'))}
@@ -328,6 +331,7 @@ function PoolRow(props: {
   const upWk = emitting ? p.rewardRate * BigInt(WEEK) : 0n
   const votePct = totalWeight > 0n ? Number((p.weight * 1_000_000n) / totalWeight) / 10_000 : 0
   const fees24 = fees24Of(p, stat)
+  const fees1h = fees1hOf(p, stat)
   const feeApr = feeAprOf(p, stat)
   const rangeEarnings = rangeHourlyEarnings(p, stat)
   const emitApr = emitAprOf(p, stat, props.upUsd)
@@ -408,10 +412,13 @@ function PoolRow(props: {
         <td className="num">
           {fees24 != null ? <span className="amber">{fmtUsd(fees24)}</span> : <span className="dim">—</span>}
         </td>
+        <td className="num">
+          {fees1h != null ? <span className="amber">{fmtUsd(fees1h)}</span> : <span className="dim">—</span>}
+        </td>
         <td className="num" title="unstaked LP net fee yield (staked LPs earn 0 fees)">
           {feeApr != null ? fmtApr(feeApr) : <span className="dim">—</span>}
         </td>
-        <td className="num" title="estimate: $1000 LP with 10% range, hourly earnings">
+        <td className="num" title="estimate: trailing 1H volume, $1000 LP with 10% range">
           {rangeEarnings != null && rangeEarnings > 0 ? (
             <span className={rangeEarnings > 200 ? 'red' : rangeEarnings > 100 ? 'range-warm' : 'amber'}>
               ${rangeEarnings.toFixed(2)}
@@ -459,7 +466,7 @@ function PoolRow(props: {
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={11}>
+          <td colSpan={12}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (

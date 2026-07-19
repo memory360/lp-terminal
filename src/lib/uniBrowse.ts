@@ -26,7 +26,7 @@ type DsPair = {
   dexId?: string
   labels?: string[]
   pairAddress?: string
-  volume?: { h24?: number }
+  volume?: { h1?: number; h24?: number }
   liquidity?: { usd?: number }
 }
 
@@ -88,9 +88,11 @@ export async function fetchUniBrowse(pc: PublicClient, query: string): Promise<U
   const stats: Record<string, PoolStat> = {}
   for (const p of picks) {
     const vol = Number(p.volume?.h24)
+    const vol1h = Number(p.volume?.h1)
     const liq = Number(p.liquidity?.usd)
     stats[p.pairAddress!.toLowerCase()] = {
       vol24hUsd: Number.isFinite(vol) ? vol : null,
+      vol1hUsd: Number.isFinite(vol1h) ? vol1h : null,
       liqUsd: Number.isFinite(liq) ? liq : null,
       source: 'dexscreener',
     }

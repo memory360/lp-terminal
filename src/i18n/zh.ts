@@ -114,6 +114,7 @@ export const zh: typeof en = {
     thTvl: 'TVL',
     thVol: '24H 量',
     thFees: '24H 费',
+    thFees1h: '1H 费',
     thFeeApr: '费率 APR',
     thRangeEarnings: '10%R-H-K',
     thRewards: '排放奖励',

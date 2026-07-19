@@ -20,7 +20,7 @@ type GtPool = {
   attributes?: {
     address?: string
     reserve_in_usd?: string
-    volume_usd?: { h24?: string }
+    volume_usd?: { h1?: string; h24?: string }
     transactions?: { h24?: { buys?: number; sells?: number } }
     base_token_price_usd?: string
     quote_token_price_usd?: string
@@ -59,7 +59,7 @@ function ingest(p: GtPool): boolean {
   const reserve = num(a.reserve_in_usd)
   const h24 = a.transactions?.h24
   const txns = h24 ? (h24.buys ?? 0) + (h24.sells ?? 0) : null
-  upsertStats(addr, num(a.volume_usd?.h24), txns, reserve, 'geckoterminal')
+  upsertStats(addr, num(a.volume_usd?.h1), num(a.volume_usd?.h24), txns, reserve, 'geckoterminal')
   // token price seeds: ground truth while fresh; depth = half the pool's reserve
   const depth = (reserve ?? 0) / 2
   if (depth > 0) {
