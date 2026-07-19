@@ -507,9 +507,17 @@ function PoolPositionLink({ position }: { position: PoolPositionCell }) {
       ? `https://app.uniswap.org/positions/v3/robinhood${count === 1 ? `/${position.tokenIds[0]}` : ''}`
       : '#positions'
   return (
-    <a href={href} target={position.protocol === 'univ3' ? '_blank' : undefined} rel="noreferrer">
-      {label}↗
-    </a>
+    <span className="lp-position">
+      <span className="lp-drop" aria-hidden="true">
+        <svg viewBox="0 0 16 16">
+          <path d="M8 2C6.2 4.5 3.8 7.2 3.8 10A4.2 4.2 0 0 0 8 14.2 4.2 4.2 0 0 0 12.2 10C12.2 7.2 9.8 4.5 8 2Z" />
+          <path d="M6.2 10.5c.4.8 1 1.2 1.8 1.3" fill="none" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </span>
+      <a href={href} target={position.protocol === 'univ3' ? '_blank' : undefined} rel="noreferrer">
+        {label}↗
+      </a>
+    </span>
   )
 }
 

@@ -677,6 +677,17 @@ th.sortable.on { color: var(--acc); }
 .token-info .pair-sub { display: block; }
 .token-copy { padding: 0; border: 0; background: none; color: var(--dim); cursor: pointer; }
 .token-copy:hover { color: var(--fg); }
+.lp-position { display: inline-flex; align-items: center; gap: 5px; }
+.lp-drop {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+}
+.lp-drop svg { width: 13px; height: 13px; fill: currentColor; }
 .tbl td { padding: 6px 8px; }
 
 /* projected APR line in add-LP panels */
