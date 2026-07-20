@@ -10,6 +10,7 @@ import type { Pool, V2Pool } from '../types'
 export type PoolStat = {
   vol24hUsd: number | null
   vol1hUsd?: number | null
+  createdAt?: number | null
   liqUsd: number | null
   source: 'dexscreener' | 'subgraph' | 'geckoterminal' | 'chain'
 }
@@ -44,6 +45,7 @@ async function fetchDexscreener(
       stats[addr] = {
         vol24hUsd: Number.isFinite(vol) ? vol : null,
         vol1hUsd: Number.isFinite(vol1h) ? vol1h : null,
+        createdAt: Number.isFinite(Number(p?.pairCreatedAt)) ? Number(p.pairCreatedAt) : null,
         liqUsd: Number.isFinite(liq) ? liq : null,
         source: 'dexscreener',
       }

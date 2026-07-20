@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS pool_stats (
   vol24h_usd REAL,
   txns24h    INTEGER,
   liq_usd    REAL,     -- GT's own reserve figure (cross-check; tvl_usd is chain-derived)
+  created_at INTEGER,  -- epoch milliseconds from the stats provider
   source     TEXT NOT NULL,
   updated    INTEGER NOT NULL
 );
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
 const statCols = db.prepare('PRAGMA table_info(pool_stats)').all() as { name: string }[]
 if (!statCols.some((c) => c.name === 'vol1h_usd')) db.exec('ALTER TABLE pool_stats ADD COLUMN vol1h_usd REAL')
+if (!statCols.some((c) => c.name === 'created_at')) db.exec('ALTER TABLE pool_stats ADD COLUMN created_at INTEGER')
 
 // ---- kv ----
 const kvGetQ = db.prepare('SELECT v FROM kv WHERE k = ?')
@@ -182,11 +184,11 @@ export const setTvl = (addr: string, tvl: number | null, approx: boolean) =>
 
 // ---- pool_stats ----
 const upStatsQ = db.prepare(`
-  INSERT INTO pool_stats (address, vol1h_usd, vol24h_usd, txns24h, liq_usd, source, updated) VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO pool_stats (address, vol1h_usd, vol24h_usd, txns24h, liq_usd, created_at, source, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(address) DO UPDATE SET vol1h_usd = excluded.vol1h_usd, vol24h_usd = excluded.vol24h_usd, txns24h = excluded.txns24h,
-    liq_usd = excluded.liq_usd, source = excluded.source, updated = excluded.updated`)
-export const upsertStats = (addr: string, vol1h: number | null, vol24h: number | null, txns24h: number | null, liqUsd: number | null, source: string) =>
-  void upStatsQ.run(addr.toLowerCase(), vol1h, vol24h, txns24h, liqUsd, source, now())
+    liq_usd = excluded.liq_usd, created_at = excluded.created_at, source = excluded.source, updated = excluded.updated`)
+export const upsertStats = (addr: string, vol1h: number | null, vol24h: number | null, txns24h: number | null, liqUsd: number | null, createdAt: number | null, source: string) =>
+  void upStatsQ.run(addr.toLowerCase(), vol1h, vol24h, txns24h, liqUsd, createdAt, source, now())
 
 /** hot set: real TVL, or GT-visible activity, or freshly created */
 export const hotAddrs = (): string[] =>

@@ -108,6 +108,7 @@ export const zh: typeof en = {
     spoofDropped: '拦截 {{n}} 个伪造池',
     thPair: '交易对',
     thPrice: '价格 / 储备',
+    thCreated: '创建时间',
     thTokenInfo: 'TOKEN 信息',
     copyTokenAddress: '复制 Token 地址',
     thLpPosition: 'LP 仓位',

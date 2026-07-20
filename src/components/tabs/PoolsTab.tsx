@@ -31,7 +31,7 @@ import {
   stakedShareOf,
   type AddSim,
 } from '../../lib/apr'
-import { fmtAmount, fmtCompactAmount, fmtNum, fmtUsd, nowSec, shortAddr } from '../../lib/format'
+import { fmtAmount, fmtCompactAmount, fmtNum, fmtPoolAge, fmtUsd, nowSec, shortAddr } from '../../lib/format'
 import { clPosMetrics, v2PosMetrics } from '../../lib/posmetrics'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, step } from '../../lib/tx'
 import { useBalances } from '../../hooks/useBalances'
@@ -269,6 +269,7 @@ export function PoolsTab() {
             <tr>
               <th>{t('pools.thPair')}</th>
               <th>{t('pools.thPrice')}</th>
+              <th>{t('pools.thCreated')}</th>
               <th>{t('pools.thTokenInfo')}</th>
               <th className="num">{t('pools.thLpPosition')}</th>
               {th('tvl', t('pools.thTvl'))}
@@ -322,7 +323,7 @@ function PoolRow(props: {
   /** UP33 filter view: show the emissions detail sub-line (wide column) */
   rewardsSub: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { p, data, totalWeight, stat } = props
   const t0 = tokenOf(data, p.token0)
   const t1 = tokenOf(data, p.token1)
@@ -397,6 +398,9 @@ function PoolRow(props: {
             <PxCell sqrtPriceX96={p.sqrtPriceX96} d0={t0.decimals} d1={t1.decimals} s0={t0.symbol} s1={t1.symbol} />
           )}
         </td>
+        <td className="mono-sm">
+          {stat?.createdAt != null ? fmtPoolAge(stat.createdAt, Date.now(), i18n.language.startsWith('zh') ? '刚刚' : 'just now') : <span className="dim">—</span>}
+        </td>
         <td>
           <TokenInfoCell token={projectTokenOf(t0, t1)} />
         </td>
@@ -466,7 +470,7 @@ function PoolRow(props: {
       </tr>
       {props.open && (
         <tr>
-          <td colSpan={12}>
+          <td colSpan={13}>
             {p.kind === 'v2' ? (
               <AddV2 pool={p} data={data} stat={stat} upUsd={props.upUsd} />
             ) : (

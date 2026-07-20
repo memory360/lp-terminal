@@ -107,6 +107,7 @@ export const en = {
     spoofDropped: '{{n}} spoof dropped',
     thPair: 'PAIR',
     thPrice: 'PRICE / RESERVES',
+    thCreated: 'CREATED',
     thTokenInfo: 'TOKEN INFO',
     copyTokenAddress: 'Copy token address',
     thLpPosition: 'LP POSITION',

@@ -68,6 +68,19 @@ export function fmtDur(seconds: number): string {
   return `${s}s`
 }
 
+export function fmtPoolAge(createdAtMs: number, nowMs = Date.now(), justNow = '刚刚'): string {
+  const age = Math.max(0, nowMs - createdAtMs)
+  if (age >= 3 * 86_400_000) return new Date(createdAtMs).toISOString().slice(0, 10)
+  const days = Math.floor(age / 86_400_000)
+  const hours = Math.floor((age % 86_400_000) / 3_600_000)
+  const mins = Math.floor((age % 3_600_000) / 60_000)
+  if (days >= 2) return `${days}days+`
+  if (days) return `${days}days ${hours} hours`
+  if (hours) return `${hours} hours`
+  if (mins) return `${mins}mins`
+  return justNow
+}
+
 /** signed bps difference of a vs b (positive = a better) */
 export function bpsDiff(a: bigint, b: bigint): number {
   if (b === 0n) return 0
