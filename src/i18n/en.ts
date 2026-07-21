@@ -106,7 +106,7 @@ export const en = {
     fallbackNote: 'indexer offline — dexscreener fallback (v3 top 30)',
     spoofDropped: '{{n}} spoof dropped',
     thPair: 'PAIR',
-    thPrice: 'PRICE / RESERVES',
+    thPrice: 'TOKEN PRICE',
     thCreated: 'CREATED',
     thTokenInfo: 'TOKEN INFO',
     copyTokenAddress: 'Copy token address',

@@ -107,7 +107,7 @@ export const zh: typeof en = {
     fallbackNote: '索引器离线 — dexscreener 兜底（v3 前 30）',
     spoofDropped: '拦截 {{n}} 个伪造池',
     thPair: '交易对',
-    thPrice: '价格 / 储备',
+    thPrice: 'TOKEN 价格',
     thCreated: '创建时间',
     thTokenInfo: 'TOKEN 信息',
     copyTokenAddress: '复制 Token 地址',

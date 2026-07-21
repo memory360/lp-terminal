@@ -25,6 +25,7 @@ import {
   fees1hOf,
   fees24Of,
   fmtApr,
+  poolTokenUsd,
   rangeHourlyEarnings,
   simulateClAdd,
   simulateV2Add,
@@ -268,9 +269,9 @@ export function PoolsTab() {
           <thead>
             <tr>
               <th>{t('pools.thPair')}</th>
+              <th>{t('pools.thTokenInfo')}</th>
               <th>{t('pools.thPrice')}</th>
               <th>{t('pools.thCreated')}</th>
-              <th>{t('pools.thTokenInfo')}</th>
               <th className="num">{t('pools.thLpPosition')}</th>
               {th('tvl', t('pools.thTvl'))}
               {th('vol', t('pools.thVol'))}
@@ -337,6 +338,9 @@ function PoolRow(props: {
   const rangeEarnings = rangeHourlyEarnings(p, stat)
   const emitApr = emitAprOf(p, stat, props.upUsd)
   const stakedPct = stakedShareOf(p) * 100
+  const project = projectTokenOf(t0, t1)
+  const usdPrices = poolTokenUsd(p, t0.decimals, t1.decimals, props.upUsd, props.wethUsd)
+  const projectUsd = usdPrices?.[project.address.toLowerCase() === p.token0.toLowerCase() ? 'p0' : 'p1']
 
   return (
     <>
@@ -389,20 +393,16 @@ function PoolRow(props: {
             )}
           </div>
         </td>
+        <td>
+          <TokenInfoCell token={project} />
+        </td>
         <td className="mono-sm">
-          {p.kind === 'v2' ? (
-            <>
-              {fmtCompactAmount(p.reserve0, t0.decimals)} {t0.symbol} + {fmtCompactAmount(p.reserve1, t1.decimals)} {t1.symbol}
-            </>
-          ) : (
-            <PxCell sqrtPriceX96={p.sqrtPriceX96} d0={t0.decimals} d1={t1.decimals} s0={t0.symbol} s1={t1.symbol} />
-          )}
+          {projectUsd != null && Number.isFinite(projectUsd) && projectUsd > 0 ? (
+            <Flash v={projectUsd}><span>${fmtNum(projectUsd)}</span></Flash>
+          ) : <span className="dim">—</span>}
         </td>
         <td className="mono-sm">
           {stat?.createdAt != null ? fmtPoolAge(stat.createdAt, Date.now(), i18n.language.startsWith('zh') ? '刚刚' : 'just now') : <span className="dim">—</span>}
-        </td>
-        <td>
-          <TokenInfoCell token={projectTokenOf(t0, t1)} />
         </td>
         <td className="num">
           {props.position ? <PoolPositionLink position={props.position} /> : <span className="dim">—</span>}
@@ -529,22 +529,6 @@ function PoolPositionLink({ position }: { position: PoolPositionCell }) {
         {label}↗
       </a>
     </span>
-  )
-}
-
-/** pool price, auto-oriented so the number is >= 1 (small prices flip quote/base) */
-function PxCell(props: { sqrtPriceX96: bigint; d0: number; d1: number; s0: string; s1: string }) {
-  const px = sqrtPriceToPrice(props.sqrtPriceX96, props.d0, props.d1)
-  // absurd magnitudes = pool initialized at a nonsense price (usually zero liquidity)
-  if (!Number.isFinite(px) || px <= 1e-15 || px >= 1e15) return <span className="dim">—</span>
-  const flip = px < 1
-  return (
-    <>
-      <Flash v={flip ? 1 / px : px}>
-        <span>{fmtNum(flip ? 1 / px : px)}</span>
-      </Flash>{' '}
-      <span className="dim">{flip ? `${props.s0}/${props.s1}` : `${props.s1}/${props.s0}`}</span>
-    </>
   )
 }
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { fees1hOf, rangeHourlyEarnings } from '../src/lib/apr'
+import { ADDR } from '../src/config/addresses'
+import { fees1hOf, poolTokenUsd, rangeHourlyEarnings } from '../src/lib/apr'
 import type { PoolStat } from '../src/lib/poolstats'
 import type { ClPool } from '../src/types'
 
@@ -15,4 +16,6 @@ assert(earned != null && Math.abs(earned - totalHourlyFees * share) < 0.000001)
 assert(rangeHourlyEarnings(pool, { ...stat, liqUsd: 1 })! < totalHourlyFees)
 assert.equal(rangeHourlyEarnings(pool, stat, 0), null)
 assert.equal(rangeHourlyEarnings(pool, { ...stat, vol1hUsd: null }), null)
+const priced = poolTokenUsd({ kind: 'v2', token0: '0x0000000000000000000000000000000000000001', token1: ADDR.WETH, reserve0: 2_000n, reserve1: 1n } as any, 0, 0, undefined, 2_000)
+assert.deepEqual(priced, { p0: 1, p1: 2_000 })
 console.log('APR math check passed')

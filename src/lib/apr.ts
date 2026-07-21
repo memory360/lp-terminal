@@ -98,6 +98,31 @@ export function clTokenUsd(
   return null
 }
 
+/** USD prices of either pool kind via USDG / WETH / UP anchors. */
+export function poolTokenUsd(
+  pool: Pool,
+  dec0: number,
+  dec1: number,
+  upUsd?: number,
+  wethUsd?: number | null,
+): { p0: number; p1: number } | null {
+  if (pool.kind === 'cl') return clTokenUsd(pool, dec0, dec1, upUsd, wethUsd)
+  const r0 = Number(pool.reserve0) / 10 ** dec0
+  const r1 = Number(pool.reserve1) / 10 ** dec1
+  if (!(r0 > 0) || !(r1 > 0)) return null
+  const ratio = r1 / r0
+  const anchors: Record<string, number | undefined> = {
+    [ADDR.USDG.toLowerCase()]: 1,
+    [ADDR.WETH.toLowerCase()]: wethUsd ?? undefined,
+    [ADDR.UP.toLowerCase()]: upUsd,
+  }
+  const a0 = anchors[pool.token0.toLowerCase()]
+  const a1 = anchors[pool.token1.toLowerCase()]
+  if (a0 !== undefined && a0 > 0) return { p0: a0, p1: a0 / ratio }
+  if (a1 !== undefined && a1 > 0) return { p0: ratio * a1, p1: a1 }
+  return null
+}
+
 export type AddSim = {
   depositUsd: number
   feeApr: number // NaN when volume unknown — YOUR unstaked net fee APR while in range
