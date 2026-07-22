@@ -3,6 +3,8 @@
 // changes apply via page reload.
 
 const KEY = 'up33.rpcUrl.v1'
+const HEALTH_KEY = 'up33.rpcHealth.v1'
+const HEALTH_TTL = 5 * 60 * 1000 // 5 minutes cache
 
 export function customRpc(): string {
   try {
@@ -55,4 +57,46 @@ export async function probeRpc(
   } catch {
     return { ok: false, err: 'unreachable (network/CORS)' }
   }
+}
+
+// RPC health status with timestamp for TTL
+export type RpcHealth = {
+  url: string
+  ok: boolean
+  err?: string
+  timestamp: number
+}
+
+// Save RPC health status to localStorage
+export function saveRpcHealth(health: RpcHealth) {
+  try {
+    localStorage.setItem(HEALTH_KEY, JSON.stringify(health))
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+// Get cached RPC health status if still valid
+export function getCachedRpcHealth(url: string): RpcHealth | null {
+  try {
+    const raw = localStorage.getItem(HEALTH_KEY)
+    if (!raw) return null
+    const health = JSON.parse(raw) as RpcHealth
+    if (health.url !== url) return null
+    if (Date.now() - health.timestamp > HEALTH_TTL) return null
+    return health
+  } catch {
+    return null
+  }
+}
+
+// Check if a URL is likely blocked (rate limited, quota exceeded) based on error
+export function isBlockedError(err: string): boolean {
+  const blockedPatterns = [
+    '429', 'rate limit', 'quota', 'limit exceeded', 'too many requests',
+    'exceeded', 'insufficient', 'service unavailable', '503', '500',
+    'invalid api key', 'authentication', 'permission', 'access denied',
+    'project id', 'api key', 'invalid key', 'key expired', 'rejected',
+  ]
+  return blockedPatterns.some(p => err.toLowerCase().includes(p))
 }

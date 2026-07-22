@@ -315,6 +315,10 @@ button, input, select {
   align-items: center;
   gap: 12px;
 }
+.banner.warn {
+  border-color: var(--gold);
+  color: var(--gold);
+}
 
 .section-title {
   color: var(--dim);

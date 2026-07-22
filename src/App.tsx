@@ -19,6 +19,7 @@ import { PoolsTab } from './components/tabs/PoolsTab'
 import { PositionsTab } from './components/tabs/PositionsTab'
 import { SwapTab } from './components/tabs/SwapTab'
 import { Btn } from './components/ui'
+import { useRpcHealth, resetRpcHealth } from './hooks/useRpcHealth'
 
 export default function App() {
   const theme = useTheme() // wallet modal accent follows the terminal theme
@@ -62,6 +63,7 @@ function Shell() {
   }
   const { isConnected, chainId } = useAccount()
   const { switchChain } = useSwitchChain()
+  const rpcHealth = useRpcHealth()
 
   useEffect(() => {
     const onHash = () => {
@@ -97,6 +99,13 @@ function Shell() {
     <div className="app">
       <Header tab={tab} onTab={setTab} />
       <div className="main">
+        {/* RPC health banner */}
+        {rpcHealth.status === 'fallback' && (
+          <div className="banner warn">
+            {t('app.rpcFallback')}
+            <Btn onClick={() => resetRpcHealth()}>{t('app.retryRpc')}</Btn>
+          </div>
+        )}
         {isConnected && chainId !== CHAIN_ID && (
           <div className="banner">
             {t('app.wrongNetwork')}

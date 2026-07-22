@@ -31,6 +31,8 @@ export const en = {
     keys: 'keys: [1] pools [2] positions [3] swap [4] limit',
     blockscout: 'blockscout↗',
     reloaded: 'reloaded — a new build was deployed while this tab was open',
+    rpcFallback: 'RPC UNAVAILABLE — falling back to public endpoint (may be slower)',
+    retryRpc: 'RETRY',
   },
   log: {
     ready: '> ready. connect wallet to begin.',

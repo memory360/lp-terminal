@@ -32,6 +32,8 @@ export const zh: typeof en = {
     keys: '快捷键: [1] 池子 [2] 仓位 [3] 兑换 [4] 限价',
     blockscout: 'blockscout↗',
     reloaded: '已刷新 — 此标签页打开期间部署了新版本',
+    rpcFallback: 'RPC 不可用 — 切换到公共节点（可能较慢）',
+    retryRpc: '重试',
   },
   log: {
     ready: '> 就绪。连接钱包开始。',
