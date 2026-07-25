@@ -1,6 +1,6 @@
 // Virtuals origin tags, intentionally cheap:
 // - history and 60s increments both use Blockscout (zero RPC usage)
-import { parseAbiItem, toEventSelector } from 'viem'
+import { isHex, parseAbiItem, toEventSelector } from 'viem'
 import { BLOCKSCOUT, log } from './config'
 import { insertVirtualsToken, kvGet, kvSet, virtualsMaxBlock } from './store'
 
@@ -17,7 +17,10 @@ type BsLog = {
   topics: [string, string, string, ...unknown[]]
 }
 
-const addressTopic = (topic: string) => `0x${topic.slice(-40)}`
+const addressTopic = (topic: string) => {
+  if (!isHex(topic) || topic.length < 42) throw new Error(`invalid topic: ${topic}`)
+  return `0x${topic.slice(-40)}`.toLowerCase()
+}
 
 function save(raw: BsLog): boolean {
   return insertVirtualsToken(
@@ -30,7 +33,7 @@ function save(raw: BsLog): boolean {
 }
 
 async function blockscoutLogs(from: number): Promise<BsLog[]> {
-  const url = `${BLOCKSCOUT}/api?module=logs&action=getLogs&fromBlock=${from}&toBlock=latest&address=${LAUNCHER}&topic0=${PRE_LAUNCHED_TOPIC}`
+  const url = `${BLOCKSCOUT}/api?module=logs&action=getLogs&fromBlock=${from}&toBlock=latest&address=${LAUNCHER}&topic0=${PRE_LAUNCHED_TOPIC}&offset=0&limit=1000`
   const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'up33-lp-indexer/0.1' } })
   const j = (await r.json()) as { status?: string; message?: string; result?: BsLog[] }
   if (!r.ok || (j.status !== '1' && !/no records/i.test(j.message ?? ''))) throw new Error(`blockscout ${j.message ?? r.status}`)
@@ -44,14 +47,15 @@ export async function backfillVirtuals(): Promise<number> {
   let added = 0
   for (;;) {
     const rows = await blockscoutLogs(cursor)
+    if (rows.length === 0) break
     for (const row of rows) if (save(row)) added++
     if (rows.length < 1000) break
-    cursor = Number(BigInt(rows[rows.length - 1].blockNumber))
+    cursor = Number(BigInt(rows[rows.length - 1].blockNumber)) + 1
     kvSet('virtuals_backfill_cursor', String(cursor))
   }
-  kvSet('virtuals_cursor', String(virtualsMaxBlock()))
+  kvSet('virtuals_cursor', String(virtualsMaxBlock() + 1))
   kvSet('virtuals_backfilled', '1')
-  kvSet('virtuals_backfill_cursor', String(virtualsMaxBlock()))
+  kvSet('virtuals_backfill_cursor', '0')
   log(`[virtuals] history: +${added} tokens`)
   return added
 }
@@ -64,7 +68,10 @@ export async function tailVirtuals(): Promise<number> {
   for (const row of rows) {
     if (save(row)) added++
   }
-  if (rows.length) kvSet('virtuals_cursor', String(Math.max(...rows.map((row) => Number(BigInt(row.blockNumber))))))
+  if (rows.length) {
+    const next = Math.max(...rows.map((row) => Number(BigInt(row.blockNumber)))) + 1
+    kvSet('virtuals_cursor', String(next))
+  }
   if (added) log(`[virtuals] +${added} tokens`)
   return added
 }
