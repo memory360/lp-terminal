@@ -493,7 +493,10 @@ function TokenInfoCell({ token }: { token: PoolsData['tokens'][string] }) {
   const { t } = useTranslation()
   return (
     <div className="token-info">
-      <b>{token.symbol}</b>
+      <span>
+        <b>{token.symbol}</b>
+        {token.virtuals && <span className="virtuals-badge" title="Issued through Virtuals Protocol">VIRTUALS</span>}
+      </span>
       <span className="pair-sub">
         <a href={`${EXPLORER}/address/${token.address}`} target="_blank" rel="noreferrer" title="Explorer">
           {shortAddr(token.address)}

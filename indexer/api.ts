@@ -4,7 +4,7 @@
 // the vite dev/preview proxy locally.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { PORT, log, now } from './config'
-import { db, kvGet, poolCounts } from './store'
+import { db, kvGet, poolCounts, virtualsCount } from './store'
 
 const JSONH = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -114,9 +114,11 @@ function getPools(params: Params) {
   if (tokenAddrs.size) {
     const list = [...tokenAddrs]
     const trs = db
-      .prepare(`SELECT address, symbol, decimals, price_usd FROM tokens WHERE address IN (${list.map(() => '?').join(',')})`)
-      .all(...list) as { address: string; symbol: string; decimals: number; price_usd: number | null }[]
-    for (const t of trs) tokens[t.address] = { address: t.address, symbol: t.symbol, decimals: t.decimals, priceUsd: t.price_usd }
+      .prepare(`SELECT t.address, t.symbol, t.decimals, t.price_usd, v.token IS NOT NULL AS virtuals
+                FROM tokens t LEFT JOIN virtuals_tokens v ON v.token = t.address
+                WHERE t.address IN (${list.map(() => '?').join(',')})`)
+      .all(...list) as { address: string; symbol: string; decimals: number; price_usd: number | null; virtuals: number }[]
+    for (const t of trs) tokens[t.address] = { address: t.address, symbol: t.symbol, decimals: t.decimals, priceUsd: t.price_usd, virtuals: t.virtuals === 1 }
   }
 
   const totals = Object.fromEntries(poolCounts().map((c) => [c.proto, c.n]))
@@ -150,6 +152,7 @@ function getHealth() {
     tokens,
     pricedTokens: priced,
     tvlPools: tvl,
+    virtualsTokens: virtualsCount(),
     v3Cursor: Number(kvGet('v3_cursor') ?? 0),
     v2Count: Number(kvGet('v2_count') ?? 0),
     rssMb: Math.round(process.memoryUsage.rss() / 1e6),

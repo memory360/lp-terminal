@@ -39,7 +39,7 @@ type ApiResponse = {
   totals: Record<string, number>
   count: number
   pools: ApiPool[]
-  tokens: Record<string, { address: string; symbol: string; decimals: number; priceUsd: number | null }>
+  tokens: Record<string, { address: string; symbol: string; decimals: number; priceUsd: number | null; virtuals?: boolean }>
 }
 
 export type UniIndexData = {
@@ -121,7 +121,7 @@ export async function fetchUniIndex(
 
   const tokens: Record<string, TokenInfo> = {}
   for (const [k, t] of Object.entries(j.tokens ?? {}))
-    tokens[k] = { address: getAddress(t.address), symbol: t.symbol, decimals: t.decimals }
+    tokens[k] = { address: getAddress(t.address), symbol: t.symbol, decimals: t.decimals, virtuals: t.virtuals }
 
   const indexed = Object.values(j.totals ?? {}).reduce((a, b) => a + b, 0)
   return { pools, tokens, stats, total: j.count, indexed }

@@ -13,6 +13,7 @@ import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
 import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
 import { startApi } from './api'
+import { backfillVirtuals, tailVirtuals } from './virtuals'
 
 /** setTimeout-chained loop — never overlaps itself, logs failures and keeps going */
 function loop(name: string, ms: number, fn: () => Promise<void>): void {
@@ -36,6 +37,8 @@ const timed = async <T,>(fn: () => Promise<T>): Promise<[T, number]> => {
 async function boot(): Promise<void> {
   log('up33 lp-indexer starting —', usingPrivateRpc ? 'rpc: private (.env)' : 'rpc: public')
   startApi()
+
+  await backfillVirtuals().catch((e) => log('[virtuals] history failed:', String(e).slice(0, 120)))
 
   const [addedV3, msV3] = await timed(backfillV3)
   if (addedV3 > 0 || !kvGet('v3_boot_logged')) {
@@ -89,6 +92,9 @@ async function boot(): Promise<void> {
   loop('stats', TUNE.statsMs, async () => {
     await gtCycle()
     reprice()
+  })
+  loop('virtuals', TUNE.virtualsMs, async () => {
+    await tailVirtuals()
   })
 }
 

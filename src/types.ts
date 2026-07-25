@@ -5,6 +5,7 @@ export type TokenInfo = {
   symbol: string
   decimals: number
   native?: boolean
+  virtuals?: boolean
 }
 
 export type PoolBase = {

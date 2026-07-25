@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS pool_stats (
   updated    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS virtuals_tokens (
+  token         TEXT PRIMARY KEY,
+  bonding_pool  TEXT NOT NULL,
+  launch_tx     TEXT NOT NULL,
+  created_block INTEGER NOT NULL,
+  created_at    INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 `)
 
@@ -120,6 +128,15 @@ export const allPoolAddrs = (): string[] =>
   (db.prepare('SELECT address FROM pools').all() as { address: string }[]).map((r) => r.address)
 export const poolCounts = () =>
   db.prepare(`SELECT proto, COUNT(*) AS n FROM pools GROUP BY proto`).all() as { proto: string; n: number }[]
+
+const insVirtualsQ = db.prepare(`
+  INSERT OR IGNORE INTO virtuals_tokens(token, bonding_pool, launch_tx, created_block, created_at)
+  VALUES (?, ?, ?, ?, ?)`)
+export const insertVirtualsToken = (token: string, pool: string, txHash: string, block: number, createdAt?: number) =>
+  Number(insVirtualsQ.run(token.toLowerCase(), pool.toLowerCase(), txHash, block, createdAt ?? null).changes) > 0
+export const virtualsCount = () => (db.prepare('SELECT COUNT(*) n FROM virtuals_tokens').get() as { n: number }).n
+export const virtualsMaxBlock = () =>
+  (db.prepare('SELECT MAX(created_block) n FROM virtuals_tokens').get() as { n: number | null }).n ?? 0
 
 // ---- tokens ----
 const insTokenQ = db.prepare(`
