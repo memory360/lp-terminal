@@ -41,6 +41,7 @@ import { usePoolStats } from '../../hooks/usePoolStats'
 import { useUpPrice } from '../../hooks/useUpPrice'
 import type { PoolStat } from '../../lib/poolstats'
 import { poolTypeLabel, tokenOf, usePools } from '../../hooks/usePools'
+import { useTokenTypes } from '../../hooks/useTokenTypes'
 import { useUniPools } from '../../hooks/useUniPools'
 import type { ClPool, Pool, PoolsData, V2Pool } from '../../types'
 import { Flash } from '../Flash'
@@ -60,6 +61,7 @@ export function PoolsTab() {
   const pools = usePools()
   const stats = usePoolStats()
   const upPrice = useUpPrice()
+  const tokenTypes = useTokenTypes('virtuals')
   const { address: user } = useAccount()
   const positions = usePositions(user)
   const [q, setQ] = useState('') // one input: filters up33 locally + queries the indexer
@@ -298,6 +300,7 @@ export function PoolsTab() {
                 open={open === p.address}
                 onToggle={() => setOpen(open === p.address ? null : p.address)}
                 rewardsSub={proto === 'up33'}
+                virtualsSet={tokenTypes.data}
               />
             ))}
           </tbody>
@@ -323,6 +326,7 @@ function PoolRow(props: {
   onToggle: () => void
   /** UP33 filter view: show the emissions detail sub-line (wide column) */
   rewardsSub: boolean
+  virtualsSet?: Set<string>
 }) {
   const { t, i18n } = useTranslation()
   const { p, data, totalWeight, stat } = props
@@ -394,7 +398,7 @@ function PoolRow(props: {
           </div>
         </td>
         <td>
-          <TokenInfoCell token={project} />
+          <TokenInfoCell token={project} virtualsSet={props.virtualsSet} />
         </td>
         <td className="mono-sm">
           {projectUsd != null && Number.isFinite(projectUsd) && projectUsd > 0 ? (
@@ -489,13 +493,14 @@ function projectTokenOf(t0: PoolsData['tokens'][string], t1: PoolsData['tokens']
   return t0
 }
 
-function TokenInfoCell({ token }: { token: PoolsData['tokens'][string] }) {
+function TokenInfoCell({ token, virtualsSet }: { token: PoolsData['tokens'][string]; virtualsSet?: Set<string> }) {
   const { t } = useTranslation()
+  const isVirtuals = token.virtuals || virtualsSet?.has(token.address.toLowerCase())
   return (
     <div className="token-info">
       <span>
         <b>{token.symbol}</b>
-        {token.virtuals && <span className="virtuals-badge" title="Issued through Virtuals Protocol">VIRTUALS</span>}
+        {isVirtuals && <span className="virtuals-badge" title="Issued through Virtuals Protocol">VIRTUALS</span>}
       </span>
       <span className="pair-sub">
         <a href={`${EXPLORER}/address/${token.address}`} target="_blank" rel="noreferrer" title="Explorer">

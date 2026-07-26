@@ -159,6 +159,15 @@ function getHealth() {
   }
 }
 
+/** token-type / origin-protocol tags; extensible for future protocols */
+function getTokenTypes(type?: string) {
+  if (type === 'virtuals') {
+    const rows = db.prepare('SELECT token FROM virtuals_tokens').all() as { token: string }[]
+    return { type, tokens: rows.map((r) => r.token) }
+  }
+  return { type: type ?? 'unknown', tokens: [] as string[] }
+}
+
 export function startApi(): void {
   const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now()
@@ -173,6 +182,7 @@ export function startApi(): void {
       let cache = 'public, max-age=10'
       if (url.pathname === '/api/pools') body = getPools(url.searchParams)
       else if (url.pathname === '/api/tokens') body = getTokens(url.searchParams)
+      else if (url.pathname === '/api/type/virtuals') body = getTokenTypes('virtuals')
       else if (url.pathname === '/api/health') {
         body = getHealth()
         cache = 'no-store'
