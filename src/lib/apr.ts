@@ -4,7 +4,8 @@
 //   fees  -> UNSTAKED LPs only (CL pays a 10% default levy); staked LPs' fees go to voters
 //   UP    -> STAKED LPs only, pro-rata ACTIVE (in-range) staked liquidity, post-cap rewardRate
 // A position earns one or the other, never both.
-import { ADDR } from '../config/addresses'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 import { sqrtPriceToPrice } from './clmath'
 import { nowSec } from './format'
 import type { PoolStat } from './poolstats'
@@ -84,11 +85,12 @@ export function clTokenUsd(
   upUsd?: number,
   wethUsd?: number | null,
 ): { p0: number; p1: number } | null {
+  const chain = requireEvmChain(getCurrentChain())
   const anchors: Record<string, number | undefined> = {
-    [ADDR.USDG.toLowerCase()]: 1,
-    [ADDR.WETH.toLowerCase()]: wethUsd ?? undefined,
-    [ADDR.UP.toLowerCase()]: upUsd,
+    [chain.anchors.stable.toLowerCase()]: 1,
+    [chain.anchors.weth.toLowerCase()]: wethUsd ?? undefined,
   }
+  if (chain.anchors.up) anchors[chain.anchors.up.toLowerCase()] = upUsd
   const P = sqrtPriceToPrice(pool.sqrtPriceX96, dec0, dec1) // token1 per 1 token0
   if (!Number.isFinite(P) || P <= 0) return null
   const a0 = anchors[pool.token0.toLowerCase()]
@@ -111,11 +113,12 @@ export function poolTokenUsd(
   const r1 = Number(pool.reserve1) / 10 ** dec1
   if (!(r0 > 0) || !(r1 > 0)) return null
   const ratio = r1 / r0
+  const chain = requireEvmChain(getCurrentChain())
   const anchors: Record<string, number | undefined> = {
-    [ADDR.USDG.toLowerCase()]: 1,
-    [ADDR.WETH.toLowerCase()]: wethUsd ?? undefined,
-    [ADDR.UP.toLowerCase()]: upUsd,
+    [chain.anchors.stable.toLowerCase()]: 1,
+    [chain.anchors.weth.toLowerCase()]: wethUsd ?? undefined,
   }
+  if (chain.anchors.up) anchors[chain.anchors.up.toLowerCase()] = upUsd
   const a0 = anchors[pool.token0.toLowerCase()]
   const a1 = anchors[pool.token1.toLowerCase()]
   if (a0 !== undefined && a0 > 0) return { p0: a0, p1: a0 / ratio }

@@ -4,7 +4,8 @@ import { useAccount } from 'wagmi'
 import { readContract, writeContract } from 'wagmi/actions'
 import { parseUnits } from 'viem'
 import { clGaugeAbi, clPmAbi, v2GaugeAbi, v2PoolAbi, v2RouterAbi } from '../../abi'
-import { ADDR, CHAIN_ID, DEXSCREENER, EXPLORER, UNI } from '../../config/addresses'
+import { getCurrentChain, useCurrentChain } from '../../hooks/useChain'
+import { requireEvmChain } from '../../lib/chains'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   MAX_UINT128,
@@ -42,6 +43,7 @@ const SLIP_BPS = 100 // 1% mins on liquidity ops
 
 export function PositionsTab() {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const { address: user } = useAccount()
   const pools = usePools()
   const positions = usePositions(user)
@@ -96,7 +98,7 @@ export function PositionsTab() {
 
   const data = positions.data!
   const pendingUp = data.cl.reduce((a, x) => a + x.earned, 0n) + data.v2.reduce((a, x) => a + x.earned, 0n)
-  const upUsd = upPrice.data
+  const upUsd = upPrice.data ?? undefined
   const wethUsd = stats.data?.wethUsd
 
   // portfolio roll-up: value / uncollected fees / UP accrual rate. Uses the
@@ -189,7 +191,8 @@ export function PositionsTab() {
               address: p.pool.gauge!,
               functionName: 'getReward',
               args: [p.tokenId],
-              chainId: CHAIN_ID,
+              chainId: chain.id,
+              chain: chain.viemChain,
             }),
           { onSuccess: offerSwapClaimedUp(user) },
         )
@@ -206,7 +209,8 @@ export function PositionsTab() {
               address: p.pool.gauge!,
               functionName: 'getReward',
               args: [user],
-              chainId: CHAIN_ID,
+              chainId: chain.id,
+              chain: chain.viemChain,
             }),
           { onSuccess: offerSwapClaimedUp(user) },
         )
@@ -255,23 +259,32 @@ export function PositionsTab() {
                 {pendingUpUsd !== null && pendingUp > 0n && (
                   <span className="dim"> ≈ {fmtUsd(pendingUpUsd)}</span>
                 )}
+                {upPrice.isError && pendingUp > 0n && (
+                  <span className="red mono-sm"> {t('pos.upPriceError')}</span>
+                )}
               </span>
             </Flash>
           }
           sub={
             <>
-              {upPerDayTotal > 0 && (
-                <span className="green">
-                  {t('pos.upPerDay', { n: fmtNum(upPerDayTotal, 3) })}
-                  {upUsd !== undefined ? ` ${t('pos.upPerDayUsd', { usd: fmtUsd(upPerDayTotal * upUsd) })}` : ''}
-                  {claimables.count > 0 ? ' · ' : ''}
-                </span>
+              {upPrice.isError ? (
+                <Btn busy={upPrice.isFetching} onClick={() => upPrice.refetch()}>
+                  {t('pos.upPriceRetry')}
+                </Btn>
+              ) : (
+                upPerDayTotal > 0 && (
+                  <span className="green">
+                    {t('pos.upPerDay', { n: fmtNum(upPerDayTotal, 3) })}
+                    {upUsd !== undefined ? ` ${t('pos.upPerDayUsd', { usd: fmtUsd(upPerDayTotal * upUsd) })}` : ''}
+                    {claimables.count > 0 ? ' · ' : ''}
+                  </span>
+                )
               )}
-              {claimables.count > 0 ? (
+              {claimables.count > 0 && !upPrice.isError ? (
                 <Btn busy={claimBusy} onClick={claimAll}>
                   {t('pos.claimAll', { n: claimables.count })}
                 </Btn>
-              ) : upPerDayTotal > 0 ? null : (
+              ) : upPerDayTotal > 0 || upPrice.isError ? null : (
                 t('pos.nothingClaimable')
               )}
             </>
@@ -366,6 +379,7 @@ export function ClCard({
   wethUsd?: number | null
 }) {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const t0 = xtokens[pos.pool.token0.toLowerCase()] ?? tokenOf(data, pos.pool.token0)
   const t1 = xtokens[pos.pool.token1.toLowerCase()] ?? tokenOf(data, pos.pool.token1)
   const [busy, setBusy] = useState(false)
@@ -374,7 +388,7 @@ export function ClCard({
 
   // all NPM write entrypoints are signature-identical across protocols —
   // only the manager address differs
-  const npm = pos.pool.protocol === 'univ3' ? UNI.V3_NPM : ADDR.CL_PM
+  const npm = pos.pool.protocol === 'univ3' ? chain.uniswap.v3Npm : chain.up33!.CL_PM
 
   // prefer the fast slot0 feed (range-order pools) over the 20s pools query
   const curTick = live?.tick ?? pos.pool.tick
@@ -428,7 +442,7 @@ export function ClCard({
         address: npm,
         functionName: 'getApproved',
         args: [pos.tokenId],
-        chainId: CHAIN_ID,
+        chainId: chain.id,
       })
       if (approved.toLowerCase() !== pos.pool.gauge.toLowerCase()) {
         const ok = await step(t('pos.stApproveNft', { id: pos.tokenId.toString() }), () =>
@@ -437,7 +451,8 @@ export function ClCard({
             address: npm,
             functionName: 'approve',
             args: [pos.pool.gauge!, pos.tokenId],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         )
         if (!ok) return
@@ -448,7 +463,8 @@ export function ClCard({
           address: pos.pool.gauge!,
           functionName: 'deposit',
           args: [pos.tokenId],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
     })
@@ -464,7 +480,8 @@ export function ClCard({
             address: pos.pool.gauge!,
             functionName: 'withdraw',
             args: [pos.tokenId],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         { onSuccess: offerSwapClaimedUp(user) },
       ),
@@ -480,7 +497,8 @@ export function ClCard({
             address: pos.pool.gauge!,
             functionName: 'getReward',
             args: [pos.tokenId],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         { onSuccess: offerSwapClaimedUp(user) },
       ),
@@ -494,7 +512,8 @@ export function ClCard({
           address: npm,
           functionName: 'collect',
           args: [{ tokenId: pos.tokenId, recipient: user, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 }],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       ),
     )
@@ -530,7 +549,8 @@ export function ClCard({
               deadline: deadline(),
             },
           ],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
       if (!ok1) return
@@ -540,7 +560,8 @@ export function ClCard({
           address: npm,
           functionName: 'collect',
           args: [{ tokenId: pos.tokenId, recipient: user, amount0Max: MAX_UINT128, amount1Max: MAX_UINT128 }],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
       if (pct === 100) untagLimit(pos.tokenId) // range order closed
@@ -562,14 +583,14 @@ export function ClCard({
         </Badge>
         <a
           className="dim mono-sm"
-          href={`${EXPLORER}/token/${npm}/instance/${pos.tokenId}`}
+          href={`${chain.explorerUrl}/token/${npm}/instance/${pos.tokenId}`}
           target="_blank"
           rel="noreferrer"
           title="Explorer"
         >
           #{pos.tokenId.toString()}↗
         </a>
-        <a className="dim mono-sm" href={`${DEXSCREENER}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
+        <a className="dim mono-sm" href={`https://dexscreener.com/${chain.dexScreenerChain}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
           🦅
         </a>
         {pos.staked ? <Badge tone="green">{t('pos.staked')}</Badge> : <Badge tone="amber">{t('pos.wallet')}</Badge>}
@@ -753,6 +774,7 @@ export function IncreasePanel(props: {
 }) {
   const { pos, dec0, dec1, sqrtP } = props
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const [fund, setFund] = useState<'pair' | 'zap'>('pair')
   const [a0, setA0] = useState('')
   const [a1, setA1] = useState('')
@@ -820,7 +842,8 @@ export function IncreasePanel(props: {
               deadline: deadline(),
             },
           ],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
       if (ok) {
@@ -952,6 +975,7 @@ export function V2Card({
   wethUsd?: number | null
 }) {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const t0 = tokenOf(data, pos.pool.token0)
   const t1 = tokenOf(data, pos.pool.token1)
   const [busy, setBusy] = useState(false)
@@ -977,7 +1001,8 @@ export function V2Card({
           address: pos.pool.gauge!,
           functionName: 'deposit',
           args: [pos.walletLp],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
     })
@@ -990,7 +1015,8 @@ export function V2Card({
           address: pos.pool.gauge!,
           functionName: 'withdraw',
           args: [pos.stakedLp],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       ),
     )
@@ -1005,7 +1031,8 @@ export function V2Card({
             address: pos.pool.gauge!,
             functionName: 'getReward',
             args: [user],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         { onSuccess: offerSwapClaimedUp(user) },
       ),
@@ -1018,7 +1045,8 @@ export function V2Card({
           abi: v2PoolAbi,
           address: pos.pool.address,
           functionName: 'claimFees',
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       ),
     )
@@ -1032,16 +1060,16 @@ export function V2Card({
       }
       const quote = await readContract(wagmiConfig, {
         abi: v2RouterAbi,
-        address: ADDR.V2_ROUTER,
+        address: chain.up33!.V2_ROUTER,
         functionName: 'quoteRemoveLiquidity',
-        args: [pos.pool.token0, pos.pool.token1, pos.pool.stable, ADDR.V2_FACTORY, lp],
-        chainId: CHAIN_ID,
+        args: [pos.pool.token0, pos.pool.token1, pos.pool.stable, chain.up33!.V2_FACTORY, lp],
+        chainId: chain.id,
       })
-      if (!(await ensureAllowance(pos.pool.address, user, ADDR.V2_ROUTER, lp, 'LP'))) return
+      if (!(await ensureAllowance(pos.pool.address, user, chain.up33!.V2_ROUTER, lp, 'LP'))) return
       await step(t('pos.stRemoveLp', { pct, pair: `${t0.symbol}/${t1.symbol}` }), () =>
         writeContract(wagmiConfig, {
           abi: v2RouterAbi,
-          address: ADDR.V2_ROUTER,
+          address: chain.up33!.V2_ROUTER,
           functionName: 'removeLiquidity',
           args: [
             pos.pool.token0,
@@ -1053,7 +1081,8 @@ export function V2Card({
             user,
             deadline(),
           ],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
       setRemoveOpen(false)
@@ -1071,10 +1100,10 @@ export function V2Card({
         <Badge tone="cyan">
           {pos.pool.stable ? 'v2 stable' : 'v2 volatile'} · {(pos.pool.feeBps / 100).toFixed(2)}%
         </Badge>
-        <a className="dim mono-sm" href={`${EXPLORER}/address/${pos.pool.address}`} target="_blank" rel="noreferrer" title="Explorer">
+        <a className="dim mono-sm" href={`${chain.explorerUrl}/address/${pos.pool.address}`} target="_blank" rel="noreferrer" title="Explorer">
           {shortAddr(pos.pool.address)}↗
         </a>
-        <a className="dim mono-sm" href={`${DEXSCREENER}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
+        <a className="dim mono-sm" href={`https://dexscreener.com/${chain.dexScreenerChain}/${pos.pool.address}`} target="_blank" rel="noreferrer" title="DexScreener">
           🦅
         </a>
         <div className="card-actions">

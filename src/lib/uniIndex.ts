@@ -57,10 +57,11 @@ export async function fetchUniIndex(
   minTvl: number,
   proto?: 'univ2' | 'univ3',
   limit = 120,
+  indexerBase?: string,
 ): Promise<UniIndexData | null> {
   let j: ApiResponse
   try {
-    const u = new URL('/api/pools', location.origin)
+    const u = new URL(`${indexerBase ?? ''}/api/pools`, location.origin)
     const q = query.trim()
     if (q) u.searchParams.set('q', q)
     if (minTvl > 0) u.searchParams.set('min_tvl', String(minTvl))

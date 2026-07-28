@@ -4,7 +4,8 @@ import { useAccount } from 'wagmi'
 import { sendTransaction, writeContract } from 'wagmi/actions'
 import { formatUnits, parseUnits, type Address } from 'viem'
 import { clSwapRouterAbi, v2RouterAbi, wethAbi } from '../../abi'
-import { ADDR, CHAIN_ID } from '../../config/addresses'
+import { useCurrentChain } from '../../hooks/useChain'
+import { requireEvmChain } from '../../lib/chains'
 import { ENV } from '../../config/env'
 import { wagmiConfig } from '../../config/wagmi'
 import { applySlippage } from '../../lib/clmath'
@@ -29,6 +30,7 @@ type SwapMode = 'market' | 'limit'
 
 export function SwapTab() {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const { address: user } = useAccount()
   const list = useTokenList(user)
   const stats = usePoolStats()
@@ -76,7 +78,9 @@ export function SwapTab() {
   useEffect(() => {
     if (!tIn && list.length) setTIn(list.find((t) => t.native) ?? list[0])
     if (!tOut) {
-      const up = list.find((t) => t.address.toLowerCase() === ADDR.UP.toLowerCase())
+      const up = chain.anchors.up
+        ? list.find((t) => t.address.toLowerCase() === chain.anchors.up!.toLowerCase())
+        : null
       if (up) setTOut(up)
     }
   }, [list, tIn, tOut])
@@ -97,8 +101,9 @@ export function SwapTab() {
 
   const bal = useBalances(user, [tIn?.address, tOut?.address].filter(Boolean) as Address[])
 
-  const isWrap = !!tIn?.native && tOut?.address.toLowerCase() === ADDR.WETH.toLowerCase()
-  const isUnwrap = !!tOut?.native && tIn?.address.toLowerCase() === ADDR.WETH.toLowerCase()
+  const weth = chain.anchors.weth.toLowerCase()
+  const isWrap = !!tIn?.native && tOut?.address.toLowerCase() === weth
+  const isUnwrap = !!tOut?.native && tIn?.address.toLowerCase() === weth
 
   const kyber = useKyberQuote(tIn?.address, tOut?.address, amount)
   const native = useNativeQuote(tIn?.address, tOut?.address, amount)
@@ -137,25 +142,27 @@ export function SwapTab() {
 
   const doWrap = () =>
     run(() =>
-      step(t('swap.stWrap', { amt: amtStr }), () =>
+      step(t('swap.stWrap', { amt: amtStr, native: chain.nativeCurrency.symbol, wrapped: chain.wrappedNativeSymbol }), () =>
         writeContract(wagmiConfig, {
           abi: wethAbi,
-          address: ADDR.WETH,
+          address: chain.anchors.weth,
           functionName: 'deposit',
           value: amount,
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       ),
     )
   const doUnwrap = () =>
     run(() =>
-      step(t('swap.stUnwrap', { amt: amtStr }), () =>
+      step(t('swap.stUnwrap', { amt: amtStr, native: chain.nativeCurrency.symbol, wrapped: chain.wrappedNativeSymbol }), () =>
         writeContract(wagmiConfig, {
           abi: wethAbi,
-          address: ADDR.WETH,
+          address: chain.anchors.weth,
           functionName: 'withdraw',
           args: [amount],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       ),
     )
@@ -190,21 +197,21 @@ export function SwapTab() {
           return
         }
         await step(t('swap.stSwapKyber', { amt: amtStr, a: tIn.symbol, b: tOut.symbol }), () =>
-          sendTransaction(wagmiConfig, { to: tx.to, data: tx.data, value: tx.value, chainId: CHAIN_ID }),
+          sendTransaction(wagmiConfig, { to: tx.to, data: tx.data, value: tx.value, chainId: chain.id }),
         )
       } else {
-        if (!nativeBest) return
+        if (!nativeBest || !chain.up33) return
         if (isNative(tIn.address)) {
           txlog.push('err', t('swap.errNeedsWeth'))
           return
         }
         const minOut = applySlippage(nativeBest.amountOut, slip)
         if (nativeBest.kind === 'v2') {
-          if (!(await ensureAllowance(tIn.address, user, ADDR.V2_ROUTER, amount, tIn.symbol))) return
+          if (!(await ensureAllowance(tIn.address, user, chain.up33.V2_ROUTER, amount, tIn.symbol))) return
           await step(t('swap.stSwapV2', { amt: amtStr, a: tIn.symbol, b: tOut.symbol }), () =>
             writeContract(wagmiConfig, {
               abi: v2RouterAbi,
-              address: ADDR.V2_ROUTER,
+              address: chain.up33!.V2_ROUTER,
               functionName: 'swapExactTokensForTokens',
               args: [
                 amount,
@@ -214,23 +221,24 @@ export function SwapTab() {
                     from: tIn.address,
                     to: erc20Of(tOut.address),
                     stable: nativeBest.pool.stable,
-                    factory: ADDR.V2_FACTORY,
+                    factory: chain.up33!.V2_FACTORY,
                   },
                 ],
                 user,
                 deadline(),
               ],
-              chainId: CHAIN_ID,
+              chainId: chain.id,
+              chain: chain.viemChain,
             }),
           )
         } else {
-          if (!(await ensureAllowance(tIn.address, user, ADDR.CL_SWAP_ROUTER, amount, tIn.symbol))) return
+          if (!(await ensureAllowance(tIn.address, user, chain.up33.CL_SWAP_ROUTER, amount, tIn.symbol))) return
           await step(
             t('swap.stSwapCl', { amt: amtStr, a: tIn.symbol, b: tOut.symbol, ts: nativeBest.pool.tickSpacing }),
             () =>
             writeContract(wagmiConfig, {
               abi: clSwapRouterAbi,
-              address: ADDR.CL_SWAP_ROUTER,
+              address: chain.up33!.CL_SWAP_ROUTER,
               functionName: 'exactInputSingle',
               args: [
                 {
@@ -244,7 +252,8 @@ export function SwapTab() {
                   sqrtPriceLimitX96: 0n,
                 },
               ],
-              chainId: CHAIN_ID,
+              chainId: chain.id,
+              chain: chain.viemChain,
             }),
           )
         }
@@ -300,7 +309,7 @@ export function SwapTab() {
 
   const usdIn = kyber.data?.routeSummary.amountInUsd
   const usdOut = kyber.data?.routeSummary.amountOutUsd
-  const isEthOut = !!tOut.native || tOut.address.toLowerCase() === ADDR.WETH.toLowerCase()
+  const isEthOut = !!tOut.native || tOut.address.toLowerCase() === weth
   const ethUsdOf = (out?: bigint) =>
     out !== undefined && stats.data?.wethUsd
       ? Number(formatUnits(out, tOut.decimals)) * stats.data.wethUsd
@@ -387,10 +396,10 @@ export function SwapTab() {
             {insufficient
               ? t('common.insufficientBalance')
               : isWrap
-                ? t('swap.wrapBtn', { amt: amtStr || '0' })
-                : t('swap.unwrapBtn', { amt: amtStr || '0' })}
+                ? t('swap.wrapBtn', { amt: amtStr || '0', native: chain.nativeCurrency.symbol })
+                : t('swap.unwrapBtn', { amt: amtStr || '0', wrapped: chain.wrappedNativeSymbol })}
           </Btn>
-          <span className="dim mono-sm">{t('swap.wrapNote', { addr: shortAddr(ADDR.WETH) })}</span>
+          <span className="dim mono-sm">{t('swap.wrapNote', { wrapped: chain.wrappedNativeSymbol, addr: shortAddr(chain.anchors.weth) })}</span>
         </div>
       ) : (
         <>
@@ -514,7 +523,7 @@ export function SwapTab() {
                   </span>
                 )}
                 {sel === 'native' && isNative(tOut.address) && (
-                  <span className="amber mono-sm">{t('swap.nativeWethNote')}</span>
+                  <span className="amber mono-sm">{t('swap.nativeWethNote', { wrapped: chain.wrappedNativeSymbol, native: chain.nativeCurrency.symbol })}</span>
                 )}
               </div>
             </>

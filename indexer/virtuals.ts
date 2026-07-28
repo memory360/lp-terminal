@@ -1,14 +1,15 @@
 // Virtuals origin tags, intentionally cheap:
 // - history and 60s increments both use Blockscout (zero RPC usage)
-import { isHex, parseAbiItem, toEventSelector } from 'viem'
-import { BLOCKSCOUT, log } from './config'
+import { isHex } from 'viem'
+import { currentChain } from './chains'
+import { requireEvmChain } from '../src/lib/chains'
+import { log } from './config'
 import { insertVirtualsToken, kvGet, kvSet, virtualsMaxBlock } from './store'
 
-const LAUNCHER = '0xd4ccbfa37e2f35611b3042e4096ad7a3459bd007' as const
-const PRE_LAUNCHED = parseAbiItem(
-  'event PreLaunched(address indexed token, address indexed bondingPool, uint256 agentId, uint256 amount, (uint8,uint16,bool,uint8,bool) launchInfo)',
-)
-const PRE_LAUNCHED_TOPIC = toEventSelector(PRE_LAUNCHED)
+const cfg = requireEvmChain(currentChain).protocols?.virtuals
+
+const LAUNCHER = cfg?.launcher
+const PRE_LAUNCHED_TOPIC = cfg?.preLaunchedTopic
 
 type BsLog = {
   blockNumber: string
@@ -33,15 +34,17 @@ function save(raw: BsLog): boolean {
 }
 
 async function blockscoutLogs(from: number): Promise<BsLog[]> {
-  const url = `${BLOCKSCOUT}/api?module=logs&action=getLogs&fromBlock=${from}&toBlock=latest&address=${LAUNCHER}&topic0=${PRE_LAUNCHED_TOPIC}&offset=0&limit=1000`
+  if (!LAUNCHER || !PRE_LAUNCHED_TOPIC) return []
+  const url = requireEvmChain(currentChain).explorerApi.logsUrl({ fromBlock: from, address: LAUNCHER, topic0: PRE_LAUNCHED_TOPIC })
   const r = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'up33-lp-indexer/0.1' } })
   const j = (await r.json()) as { status?: string; message?: string; result?: BsLog[] }
   if (!r.ok || (j.status !== '1' && !/no records/i.test(j.message ?? ''))) throw new Error(`blockscout ${j.message ?? r.status}`)
   return j.result ?? []
 }
 
-/** one small Blockscout request in practice; paginates safely if the list grows */
+/** one-time history backfill; safe to restart */
 export async function backfillVirtuals(): Promise<number> {
+  if (!LAUNCHER || !PRE_LAUNCHED_TOPIC) return 0
   if (kvGet('virtuals_backfilled')) return 0
   let cursor = Number(kvGet('virtuals_backfill_cursor') ?? virtualsMaxBlock())
   let added = 0
@@ -62,6 +65,7 @@ export async function backfillVirtuals(): Promise<number> {
 
 /** incremental scan: one filtered Blockscout request per minute, no RPC */
 export async function tailVirtuals(): Promise<number> {
+  if (!LAUNCHER || !PRE_LAUNCHED_TOPIC) return 0
   const from = Number(kvGet('virtuals_cursor') ?? virtualsMaxBlock())
   const rows = await blockscoutLogs(from)
   let added = 0

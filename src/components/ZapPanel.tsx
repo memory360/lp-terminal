@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { formatUnits, parseUnits, type Address } from 'viem'
-import { ADDR } from '../config/addresses'
 import { simulateClAdd, simulateV2Add, fmtApr } from '../lib/apr'
 import { applySlippage } from '../lib/clmath'
 import { fmtAmount, fmtUsd } from '../lib/format'
@@ -14,6 +13,8 @@ import { NATIVE } from '../lib/kyber'
 import { txlog } from '../lib/txlog'
 import { executeZap, planZap, zapStages, type ZapPlan, type ZapTarget } from '../lib/zap'
 import { useBalances } from '../hooks/useBalances'
+import { useCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from '../lib/chains'
 import type { PoolStat } from '../lib/poolstats'
 import type { TokenInfo } from '../types'
 import { Btn, NumInput } from './ui'
@@ -30,11 +31,12 @@ export function ZapPanel(props: {
 }) {
   const { target, t0, t1 } = props
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const pool = target.pool
   const { address: user } = useAccount()
 
-  const hasWeth = [t0.address.toLowerCase(), t1.address.toLowerCase()].includes(ADDR.WETH.toLowerCase())
-  const wethIs0 = t0.address.toLowerCase() === ADDR.WETH.toLowerCase()
+  const hasWeth = [t0.address.toLowerCase(), t1.address.toLowerCase()].includes(chain.anchors.weth.toLowerCase())
+  const wethIs0 = t0.address.toLowerCase() === chain.anchors.weth.toLowerCase()
   const [sel, setSel] = useState<'0' | '1' | 'eth'>(hasWeth ? (wethIs0 ? '0' : '1') : '0')
   const [amtStr, setAmtStr] = useState('')
   const [amount, setAmount] = useState(0n)
@@ -48,9 +50,11 @@ export function ZapPanel(props: {
 
   const tokenInAddr: Address = sel === 'eth' ? NATIVE : sel === '0' ? t0.address : t1.address
   const tIn: TokenInfo =
-    sel === 'eth' ? { address: NATIVE, symbol: 'ETH', decimals: 18, native: true } : sel === '0' ? t0 : t1
+    sel === 'eth'
+      ? { address: NATIVE, symbol: chain.nativeCurrency.symbol, decimals: chain.nativeCurrency.decimals, native: true }
+      : sel === '0' ? t0 : t1
   const wethInputUsd =
-    (sel === 'eth' || tIn.address.toLowerCase() === ADDR.WETH.toLowerCase()) && props.wethUsd
+    (sel === 'eth' || tIn.address.toLowerCase() === chain.anchors.weth.toLowerCase()) && props.wethUsd
       ? Number(amtStr) * props.wethUsd
       : NaN
 
@@ -77,7 +81,7 @@ export function ZapPanel(props: {
   const canResume = !!runAt?.failed && !!runPlan && runKey === currentKey
 
   const plan = useQuery({
-    queryKey: ['zapPlan', pool.address, lo, hi, tokenInAddr, amount.toString()],
+    queryKey: ['zapPlan', chain.id, pool.address, lo, hi, tokenInAddr, amount.toString()],
     enabled: amount > 0n && !running,
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -208,9 +212,9 @@ export function ZapPanel(props: {
             className={`chip ${sel === 'eth' ? 'on' : ''}`}
             onClick={() => setSel('eth')}
             disabled={running}
-            title={t('zap.ethTip')}
+            title={t('zap.ethTip', { native: chain.nativeCurrency.symbol, wrapped: chain.wrappedNativeSymbol })}
           >
-            ETH
+            {chain.nativeCurrency.symbol}
           </button>
         )}
         <NumInput value={amtStr} onChange={setAmtStr} disabled={running} width={220} />

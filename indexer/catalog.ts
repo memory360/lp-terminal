@@ -12,9 +12,13 @@
 //          fetch any indices we haven't seen.
 import { parseAbiItem, toEventSelector } from 'viem'
 import { uniV2FactoryAbi, uniV2PairAbi } from '../src/abi'
-import { BLOCKSCOUT, log, sleep, UNI } from './config'
+import { currentChain } from './chains'
+import { requireEvmChain } from '../src/lib/chains'
+import { log, sleep } from './config'
 import { mc, ok, pc } from './rpc'
 import { insertPool, kvGet, kvSet, tx } from './store'
+
+const chain = requireEvmChain(currentChain)
 
 const POOL_CREATED = parseAbiItem(
   'event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)',
@@ -66,9 +70,11 @@ export async function backfillV3(): Promise<number> {
     return added
   }
   for (;;) {
-    const j = await bsJson(
-      `${BLOCKSCOUT}/api?module=logs&action=getLogs&fromBlock=${cursor}&toBlock=latest&address=${UNI.V3_FACTORY}&topic0=${POOL_CREATED_TOPIC}`,
-    ).catch(() => ({ status: '0', message: 'no response' }) as Record<string, unknown>)
+    const j = await bsJson(chain.explorerApi.logsUrl({
+      fromBlock: cursor,
+      address: chain.uniswap.v3Factory,
+      topic0: POOL_CREATED_TOPIC,
+    })).catch(() => ({ status: '0', message: 'no response' }) as Record<string, unknown>)
     if (j.status !== '1') {
       if (/no records/i.test(String(j.message))) break
       if (++flakes >= 6) {
@@ -120,7 +126,7 @@ async function scanV3Windows(from: number, to: number): Promise<string[]> {
   for (let lo = from; lo <= to; lo += 9_001) {
     const hi = Math.min(lo + 9_000, to)
     const logs = await pc.getLogs({
-      address: UNI.V3_FACTORY,
+      address: chain.uniswap.v3Factory,
       event: POOL_CREATED,
       fromBlock: BigInt(lo),
       toBlock: BigInt(hi),
@@ -163,7 +169,7 @@ export async function tailV3(): Promise<string[]> {
  */
 export async function syncV2(): Promise<string[]> {
   const count = Number(
-    await pc.readContract({ abi: uniV2FactoryAbi, address: UNI.V2_FACTORY, functionName: 'allPairsLength' }),
+    await pc.readContract({ abi: uniV2FactoryAbi, address: chain.uniswap.v2Factory, functionName: 'allPairsLength' }),
   )
   let known = Number(kvGet('v2_count') ?? 0)
   if (count <= known) return []
@@ -172,7 +178,7 @@ export async function syncV2(): Promise<string[]> {
     const n = Math.min(2_000, count - known) // 2k pairs per round = 5 + 10 aggregates
     const idx = Array.from({ length: n }, (_, i) => known + i)
     const pairRes = await mc(
-      idx.map((i) => ({ abi: uniV2FactoryAbi, address: UNI.V2_FACTORY, functionName: 'allPairs', args: [BigInt(i)] })),
+      idx.map((i) => ({ abi: uniV2FactoryAbi, address: chain.uniswap.v2Factory, functionName: 'allPairs', args: [BigInt(i)] })),
     )
     const pairs: string[] = []
     for (const r of pairRes) {

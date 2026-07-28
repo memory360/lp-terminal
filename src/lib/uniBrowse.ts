@@ -12,13 +12,12 @@
 // the same address — an API can suggest pools, it can never substitute one.
 import { getAddress, zeroAddress, type Address, type PublicClient } from 'viem'
 import { erc20Abi, uniV3FactoryAbi, uniV3PoolAbi } from '../abi'
-import { ADDR, UNI } from '../config/addresses'
 import { ENV } from '../config/env'
 import { loadTokenCache, saveTokenCache } from '../hooks/usePools'
+import { requireEvmChain, type ChainAdapter } from '../lib/chains'
 import type { PoolStat } from './poolstats'
 import type { ClPool, TokenInfo } from '../types'
 
-const DS = ENV.proxied ? '/dexscreener' : 'https://api.dexscreener.com'
 const CAP = 30 // top pools by TVL per query — keeps the verify multicall small
 
 type DsPair = {
@@ -39,30 +38,34 @@ export type UniBrowse = {
   dropped: number // candidates that failed factory.getPool verification
 }
 
-function v3PairsOf(json: unknown): DsPair[] {
+function v3PairsOf(json: unknown, chainKey: string): DsPair[] {
   const arr = Array.isArray(json) ? json : ((json as { pairs?: DsPair[] })?.pairs ?? [])
   return arr.filter(
-    (p) => p?.chainId === 'robinhood' && p?.dexId === 'uniswap' && (p?.labels ?? []).includes('v3'),
+    (p) => p?.chainId === chainKey && p?.dexId === 'uniswap' && (p?.labels ?? []).includes('v3'),
   )
 }
 
-async function dsJson(path: string): Promise<unknown> {
-  const r = await fetch(DS + path)
-  if (!r.ok) throw new Error(`dexscreener ${r.status}`)
-  return r.json()
+function makeDs(chainKey: string) {
+  const base = ENV.proxied ? '/dexscreener' : 'https://api.dexscreener.com'
+  return {
+    json: async (path: string): Promise<unknown> => {
+      const r = await fetch(base + path)
+      if (!r.ok) throw new Error(`dexscreener ${r.status}`)
+      return r.json()
+    },
+    candidates: async (query: string): Promise<DsPair[]> => {
+      const q = query.trim()
+      if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
+        const byToken = v3PairsOf(await ds.json(`/token-pairs/v1/${chainKey}/${q}`).catch(() => null), chainKey)
+        if (byToken.length) return byToken
+        return v3PairsOf(await ds.json(`/latest/dex/pairs/${chainKey}/${q}`).catch(() => null), chainKey)
+      }
+      return v3PairsOf(await ds.json(`/latest/dex/search?q=${encodeURIComponent(q)}`).catch(() => null), chainKey)
+    },
+  }
 }
 
-/** dexscreener candidates for a query: token address, pool address, or symbol text */
-async function candidatesFor(query: string): Promise<DsPair[]> {
-  const q = query.trim()
-  if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
-    // token address first (the common case), then pool-address lookup
-    const byToken = v3PairsOf(await dsJson(`/token-pairs/v1/robinhood/${q}`).catch(() => null))
-    if (byToken.length) return byToken
-    return v3PairsOf(await dsJson(`/latest/dex/pairs/robinhood/${q}`).catch(() => null))
-  }
-  return v3PairsOf(await dsJson(`/latest/dex/search?q=${encodeURIComponent(q)}`).catch(() => null))
-}
+const ds = makeDs('robinhood')
 
 type McRes = { status: 'success' | 'failure'; result?: unknown }
 const ok = <T,>(r: McRes | undefined): T | undefined =>
@@ -72,8 +75,10 @@ const ok = <T,>(r: McRes | undefined): T | undefined =>
  * Discover + on-chain-verify Uniswap v3 pools. `query` empty = WETH (hub token).
  * Returns ready-to-render ClPool objects (protocol 'univ3', no gauge fields).
  */
-export async function fetchUniBrowse(pc: PublicClient, query: string): Promise<UniBrowse> {
-  const raw = await candidatesFor(query || ADDR.WETH)
+export async function fetchUniBrowse(pc: PublicClient, query: string, chain: ChainAdapter): Promise<UniBrowse> {
+  const evmChain = requireEvmChain(chain)
+  const ds = makeDs(evmChain.dexScreenerChain)
+  const raw = await ds.candidates(query || evmChain.anchors.weth)
 
   // dedupe, rank by TVL, cap
   const seen = new Map<string, DsPair>()
@@ -131,7 +136,7 @@ export async function fetchUniBrowse(pc: PublicClient, query: string): Promise<U
   const gp = (await pc.multicall({
     contracts: hyd.map((h) => ({
       abi: uniV3FactoryAbi,
-      address: UNI.V3_FACTORY,
+      address: evmChain.uniswap.v3Factory,
       functionName: 'getPool',
       args: [h.token0, h.token1, h.fee],
     })) as never,

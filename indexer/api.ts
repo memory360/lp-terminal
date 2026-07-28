@@ -3,6 +3,8 @@
 // strings). Served same-origin in production (nginx /api → this) and through
 // the vite dev/preview proxy locally.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { currentChain } from './chains'
+import { requireEvmChain } from '../src/lib/chains'
 import { PORT, log, now } from './config'
 import { db, kvGet, poolCounts, virtualsCount } from './store'
 
@@ -147,6 +149,8 @@ function getHealth() {
   const tvl = (db.prepare('SELECT COUNT(*) AS n FROM pool_state WHERE tvl_usd IS NOT NULL').get() as { n: number }).n
   return {
     ready: kvGet('ready') === '1',
+    chainId: currentChain.id,
+    chain: currentChain.key,
     asof: now(),
     pools: totals,
     tokens,
@@ -159,13 +163,25 @@ function getHealth() {
   }
 }
 
+function getChainInfo() {
+  return {
+    id: currentChain.id,
+    key: currentChain.key,
+    name: currentChain.name,
+    nativeCurrency: currentChain.nativeCurrency,
+    explorerUrl: currentChain.explorerUrl,
+    dexScreenerChain: currentChain.dexScreenerChain,
+    hasVirtuals: !!requireEvmChain(currentChain).protocols?.virtuals,
+  }
+}
+
 /** token-type / origin-protocol tags; extensible for future protocols */
 function getTokenTypes(type?: string) {
   if (type === 'virtuals') {
     const rows = db.prepare('SELECT token FROM virtuals_tokens').all() as { token: string }[]
-    return { type, tokens: rows.map((r) => r.token) }
+    return { chainId: currentChain.id, type, tokens: rows.map((r) => r.token) }
   }
-  return { type: type ?? 'unknown', tokens: [] as string[] }
+  return { chainId: currentChain.id, type: type ?? 'unknown', tokens: [] as string[] }
 }
 
 export function startApi(): void {
@@ -182,6 +198,7 @@ export function startApi(): void {
       let cache = 'public, max-age=10'
       if (url.pathname === '/api/pools') body = getPools(url.searchParams)
       else if (url.pathname === '/api/tokens') body = getTokens(url.searchParams)
+      else if (url.pathname === '/api/chain') body = getChainInfo()
       else if (url.pathname === '/api/type/virtuals') body = getTokenTypes('virtuals')
       else if (url.pathname === '/api/health') {
         body = getHealth()

@@ -1,8 +1,9 @@
 import { getAddress, type Address } from 'viem'
+import { robinhood } from '../lib/chains'
 
-/** chain-official public RPC — wallet-safe, key-free. Used for chain metadata
- *  (what gets suggested to wallets) and as the last-resort read transport. */
-export const PUBLIC_RPC = 'https://rpc.mainnet.chain.robinhood.com'
+/** Default chain-official public RPC — wallet-safe, key-free. Used for chain
+ *  metadata and as the last-resort read transport when no chain is selected. */
+export const PUBLIC_RPC = robinhood.publicRpc
 
 // Values come from the repo-root .env via vite envDir/envPrefix (see vite.config.ts).
 export const ENV = {
@@ -35,4 +36,18 @@ export const ENV = {
   // to the receiver by the kyber router itself.
   kyberFeeBps: Number((import.meta.env.KYBERSWAP_FEE_BPS ?? '').trim()) || 0,
   kyberFeeReceiver: (import.meta.env.KYBERSWAP_FEE_RECEIVER ?? '').trim(),
+}
+
+/**
+ * Per-chain private RPC URL from build-time env. Matches the indexer's
+ * rpcUrl() precedence: RPC_{CHAIN_KEY} wins, RPC is Robinhood-only fallback.
+ * Returns '' when unset (caller falls back to the chain's publicRpc).
+ */
+export function rpcUrlForChain(chainKey: string): string {
+  const key = chainKey.toUpperCase()
+  const perChain = ((import.meta.env as Record<string, string>)[`RPC_${key}`] ?? '').trim()
+  if (perChain) return perChain
+  // Legacy: bare RPC env var is Robinhood-only
+  if (chainKey === 'robinhood') return ENV.rpcUrl
+  return ''
 }

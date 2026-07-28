@@ -6,6 +6,7 @@
 // Loops: tail 10s · hot sweep 60s · full sweep 60min · GT stats 5min.
 // The API starts listening immediately; `ready:false` in responses tells the
 // frontend to keep using its client-side fallback until the first pass lands.
+import { currentChain } from './chains'
 import { log, PORT, TUNE } from './config'
 import { usingPrivateRpc } from './rpc'
 import { backfillV3, syncV2, tailV3 } from './catalog'
@@ -35,7 +36,7 @@ const timed = async <T,>(fn: () => Promise<T>): Promise<[T, number]> => {
 }
 
 async function boot(): Promise<void> {
-  log('up33 lp-indexer starting —', usingPrivateRpc ? 'rpc: private (.env)' : 'rpc: public')
+  log(`up33 lp-indexer starting — chain=${currentChain.key} (${currentChain.id}) —`, usingPrivateRpc ? 'rpc: private (.env)' : 'rpc: public')
   startApi()
 
   await backfillVirtuals().catch((e) => log('[virtuals] history failed:', String(e).slice(0, 120)))

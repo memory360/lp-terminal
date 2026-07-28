@@ -11,12 +11,13 @@ import { fileURLToPath } from 'node:url'
 // preview servers below emulate that reverse proxy so the mode is testable locally.
 export default defineConfig(({ mode }) => {
   const envDir = fileURLToPath(new URL('.', import.meta.url))
-  const env = loadEnv(mode, envDir, ['RPC'])
+  const env = loadEnv(mode, envDir, '')
   // local emulation of the production reverse proxies, so the server deployment
   // mode is fully testable via `RPC="" npm run build && npm run preview`:
   //  - /rpc   -> the .env RPC (or RPC_PROXY_TARGET override); key stays in node
   //  - /kyber -> the public kyber aggregator
   const upstream = (process.env.RPC_PROXY_TARGET ?? env.RPC ?? '').trim()
+  const graphKey = (process.env.THEGRAPH_API_KEY ?? env.THEGRAPH_API_KEY ?? '').trim()
   const passthru = (prefix: string, target: string) => ({
     target,
     changeOrigin: true,
@@ -27,17 +28,22 @@ export default defineConfig(({ mode }) => {
     '/kyber': passthru('/kyber', 'https://aggregator-api.kyberswap.com'),
     '/dexscreener': passthru('/dexscreener', 'https://api.dexscreener.com'),
     '/goldsky': passthru('/goldsky', 'https://api.goldsky.com'),
-    // local pool indexer (`npm run indexer`) — same-origin /api like the
-    // production nginx route; the frontend falls back to client-side
-    // dexscreener discovery when it isn't running
-    '/api': { target: `http://localhost:${process.env.INDEXER_PORT || 8787}`, changeOrigin: true },
+    '/graph-bsc-v2': {
+      target: 'https://gateway.thegraph.com/api/subgraphs/id/8EjCaWZumyAfN3wyB4QnibeeXaYS8i4sp1PiWT91AGrt',
+      changeOrigin: true,
+      rewrite: () => '',
+      ...(graphKey ? { headers: { authorization: `Bearer ${graphKey}` } } : {}),
+    },
+    // Multi-chain indexer manager. It starts chain workers on demand and
+    // proxies /api/chains/:id/indexer/* to the matching worker.
+    '/api': { target: `http://localhost:${process.env.INDEXER_MANAGER_PORT || 8790}`, changeOrigin: true },
   }
   if (/^https?:\/\//.test(upstream)) proxy['/rpc'] = passthru('/rpc', upstream)
 
   return {
     plugins: [react()],
     envDir,
-    envPrefix: ['VITE_', 'RPC', 'KYBERSWAP_'],
+    envPrefix: ['VITE_', 'RPC', 'KYBERSWAP_', 'JUPITER_'],
     server: { port: 5173, proxy },
     preview: { port: 4173, proxy },
     build: {

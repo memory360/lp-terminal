@@ -1,14 +1,14 @@
 # LP TERMINAL
 
-Terminal-style frontend for LPs on Robinhood Chain (chainId 4663): UP33
-(ve(3,3) DEX) plus the official **Uniswap v2 + v3** deployments. POSITIONS shows
+Multi-chain terminal-style frontend for LPs. Robinhood Chain includes UP33
+(ve(3,3) DEX) plus official **Uniswap v2 + v3**; BNB Smart Chain includes the
+official Uniswap deployments. POSITIONS shows
 and manages UP33 + univ3, POOLS browses/adds liquidity across all three,
 distinguished by protocol badges (brand mark + colored label). Discovery runs on
 a self-hosted **pool indexer** (see below) with a client-side fallback.
 Terminal *style* — full-bleed layout, not a boxed console.
-Every contract address the app touches lives in `src/config/addresses.ts`, each
-one verified against Blockscout's verified source — check them yourself before
-you trust this with funds.
+Chain-specific addresses and API behavior live under `src/chains/robinhood/`
+and `src/chains/bsc/`; shared code only consumes the chain adapter.
 
 **Status**: v1, built for personal use and opened up as-is. See
 [Known v1 limits](#known-v1-limits). MIT licensed — see [Disclaimer](#disclaimer)
@@ -20,9 +20,8 @@ before you point it at real money.
 npm install
 cp .env.example .env   # every key is optional; defaults hit public endpoints
 npm run smoke          # optional: live-chain read-layer validation (TickMath, ABIs, quotes)
-npm run indexer        # pool indexer on :8787 (first boot backfills ~10 min; optional but
-                       # recommended — without it POOLS falls back to dexscreener discovery)
-npm run dev            # http://localhost:5173 (proxies /api -> :8787)
+npm run indexer:manager # starts the selected chain indexer on demand
+npm run dev             # http://localhost:5173 (proxies /api -> manager :8790)
 ```
 
 Environment comes from the **repo-root `.env`** (via vite `envDir`) — see
@@ -30,7 +29,10 @@ Environment comes from the **repo-root `.env`** (via vite `envDir`) — see
 
 | key | use |
 |---|---|
-| `RPC` | private Robinhood Chain RPC (**secret** — personal/local builds only; leave unset for public builds, see [Chain reads](#chain-reads)) |
+| `RPC` / `RPC_ROBINHOOD` | private Robinhood Chain RPC (**secret** — personal/local builds only) |
+| `RPC_BSC` | optional private BSC indexer RPC; otherwise the public BSC RPC is used |
+| `BSCSCAN_API_KEY` | server-side BscScan key used by the BSC V3 event backfill |
+| `THEGRAPH_API_KEY` | server-side Graph gateway key for BSC Uniswap V2 statistics |
 | `KYBERSWAP_AGGREGATOR_API_BASE_URL` | kyber aggregator base |
 | `KYBERSWAP_CHAIN` | chain slug (`robinhood`) |
 | `KYBERSWAP_ROUTER_ADDRESS` | **whitelist** — swap calldata is only ever sent to this address |
@@ -180,7 +182,8 @@ caddy / Cloudflare Worker will do:
 | `/kyber-setting` | `https://ks-setting.kyberswap.com` | token list |
 | `/dexscreener` | `https://api.dexscreener.com` | UP33 TVL/volume stats |
 | `/goldsky` | `https://api.goldsky.com` | UP33 v2 subgraph |
-| `/api` | your `indexer` process on :8787 | uniswap pool discovery (optional) |
+| `/graph-bsc-v2` | Graph gateway subgraph `8EjCaW…91AGrt`, with server-side bearer key | BSC Uniswap v2 stats |
+| `/api` | your `indexer:manager` process on :8790 | per-chain Uniswap pool discovery |
 
 Routing the data APIs through your own origin means the browser only ever talks
 to your origin + the chain RPC + wallet relays, so users on restrictive networks
@@ -260,9 +263,8 @@ browser level even if HTML were tampered in transit.
   wallet-level tracking works meanwhile.
 - Creating a NEW univ3 pool (`createAndInitializePoolIfNecessary`) is not
   wired up — mint into existing pools only.
-- Uniswap v4 is live on the chain but not integrated (addresses noted in
-  `src/config/addresses.ts`; the indexer's catalog model extends to v4's
-  `Initialize` events if/when wanted).
+- Uniswap v4 is live on Robinhood Chain but not integrated; the indexer's
+  catalog model extends to v4 `Initialize` events if/when wanted.
 
 ## Disclaimer
 

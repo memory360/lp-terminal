@@ -1,15 +1,7 @@
-import { createPublicClient, defineChain, http, type PublicClient } from 'viem'
+import { createPublicClient, http, type PublicClient } from 'viem'
+import { currentChain } from './chains'
+import { requireEvmChain } from '../src/lib/chains'
 import { log, PUBLIC_RPC, TUNE, rpcUrl, sleep } from './config'
-
-// duplicated from src/config/chain.ts — that module imports src/config/env.ts
-// (import.meta.env, vite-only) so it can't be loaded under node
-const robinhood = defineChain({
-  id: 4663,
-  name: 'Robinhood Chain',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [PUBLIC_RPC] } },
-  contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
-})
 
 const url = rpcUrl()
 export const usingPrivateRpc = url !== PUBLIC_RPC
@@ -17,7 +9,7 @@ export const usingPrivateRpc = url !== PUBLIC_RPC
 // (measured 2026-07-16); a stalled attempt should fail fast and retry, not
 // pin the whole boot for 30s. Bad chunks degrade to sub-chunks in mc().
 export const pc: PublicClient = createPublicClient({
-  chain: robinhood,
+  chain: requireEvmChain(currentChain).viemChain,
   transport: http(url, { timeout: 10_000, retryCount: 2, retryDelay: 400 }),
 })
 

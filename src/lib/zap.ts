@@ -16,8 +16,9 @@
 import type { Address } from 'viem'
 import { readContract, sendTransaction, writeContract } from 'wagmi/actions'
 import { clPmAbi, uniV2PairAbi, uniV2RouterAbi, uniV3PmAbi, v2RouterAbi, wethAbi } from '../abi'
-import { ADDR, CHAIN_ID, UNI } from '../config/addresses'
 import { ENV } from '../config/env'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 import { wagmiConfig } from '../config/wagmi'
 import { t } from '../i18n'
 import {
@@ -114,10 +115,11 @@ export async function planZap(args: {
   signal?: AbortSignal
 }): Promise<ZapPlan> {
   const { target, tokenIn, amountIn } = args
+  const chain = requireEvmChain(getCurrentChain())
   const pool = poolOf(target)
   if (amountIn <= 0n) throw new Error(t('zap.errAmount'))
   const nativeIn = isNat(tokenIn)
-  const erc20In = nativeIn ? ADDR.WETH : tokenIn
+  const erc20In = nativeIn ? chain.anchors.weth : tokenIn
   const inIs0 = low(erc20In) === low(pool.token0)
   if (!inIs0 && low(erc20In) !== low(pool.token1)) throw new Error(t('zap.errNotInPool'))
   const otherErc20 = inIs0 ? pool.token1 : pool.token0
@@ -130,7 +132,7 @@ export async function planZap(args: {
   if (swapIn > 0n && swapIn * 1_000_000n < amountIn) swapIn = 0n // <0.0001% — not worth a tx
   if (amountIn - swapIn > 0n && (amountIn - swapIn) * 1_000_000n < amountIn) swapIn = amountIn
   if (swapIn > 0n) {
-    route = await kyberRoute(erc20In, otherErc20, swapIn, { signal: args.signal })
+    route = await kyberRoute(erc20In, otherErc20, swapIn, { signal: args.signal, chain: chain.kyberChain })
     const q1 = Number(BigInt(route.routeSummary.amountOut)) / Number(swapIn)
     if (!(q1 > 0)) throw new Error(t('zap.errZeroQuote'))
     const s1 = solveSwap(amountIn, rho, q1)
@@ -138,7 +140,7 @@ export async function planZap(args: {
     const drift = s1 > swapIn ? s1 - swapIn : swapIn - s1
     if (drift * 250n > amountIn && s1 > 0n) {
       swapIn = s1
-      route = await kyberRoute(erc20In, otherErc20, swapIn, { signal: args.signal })
+      route = await kyberRoute(erc20In, otherErc20, swapIn, { signal: args.signal, chain: chain.kyberChain })
     }
   }
   const estOut = route ? BigInt(route.routeSummary.amountOut) : 0n
@@ -216,11 +218,19 @@ const depositVerb = (tgt: ZapTarget): string =>
 
 /** the exact tx sequence executeZap will run, for preview + progress UI */
 export function zapStages(plan: ZapPlan, target: ZapTarget, t0: TokenInfo, t1: TokenInfo): ZapStage[] {
+  const chain = requireEvmChain(getCurrentChain())
   const tIn = plan.inIs0 ? t0 : t1
   const tOut = plan.inIs0 ? t1 : t0
   const spender = target.kind === 'v2' ? t('zap.spenderRouter') : t('zap.spenderNpm')
   const stages: ZapStage[] = []
-  if (plan.nativeIn) stages.push({ kind: 'wrap', label: t('zap.stWrap', { amt: fmtAmount(plan.amountIn, 18) }) })
+  if (plan.nativeIn) stages.push({
+    kind: 'wrap',
+    label: t('zap.stWrap', {
+      amt: fmtAmount(plan.amountIn, chain.nativeCurrency.decimals),
+      native: chain.nativeCurrency.symbol,
+      wrapped: chain.wrappedNativeSymbol,
+    }),
+  })
   if (plan.swapIn > 0n) {
     stages.push({ kind: 'approveIn', label: t('zap.stApproveKyber', { sym: tIn.symbol }) })
     stages.push({
@@ -262,6 +272,8 @@ export async function executeZap(args: {
   onStage?: (i: number) => void
 }): Promise<ZapRun> {
   const { plan, target, user, slipBps, depositSlipBps, t0, t1 } = args
+  const chain = requireEvmChain(getCurrentChain())
+  const up33 = chain.up33
   const pool = poolOf(target)
   const stages = zapStages(plan, target, t0, t1)
   const tIn = plan.inIs0 ? t0 : t1
@@ -282,10 +294,11 @@ export async function executeZap(args: {
         const h = await step(st.label, () =>
           writeContract(wagmiConfig, {
             abi: wethAbi,
-            address: ADDR.WETH,
+            address: chain.anchors.weth,
             functionName: 'deposit',
             value: plan.amountIn,
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         )
         if (!h) return fail()
@@ -299,7 +312,7 @@ export async function executeZap(args: {
         // fresh quote for the build; the plan's quote is preview-only
         let fresh
         try {
-          fresh = await kyberRoute(plan.erc20In, otherErc20, plan.swapIn)
+          fresh = await kyberRoute(plan.erc20In, otherErc20, plan.swapIn, { chain: chain.kyberChain })
         } catch (e) {
           return abort(t('zap.haltRequote', { err: (e as Error).message }))
         }
@@ -333,7 +346,7 @@ export async function executeZap(args: {
         let got = 0n
         const h = await step(
           st.label + ' [KYBER]',
-          () => sendTransaction(wagmiConfig, { to: tx.to, data: tx.data, value: tx.value, chainId: CHAIN_ID }),
+          () => sendTransaction(wagmiConfig, { to: tx.to, data: tx.data, value: tx.value, chainId: chain.id }),
           { onSuccess: (rcpt) => (got = receivedOf(rcpt, otherErc20, user)) },
         )
         if (!h) return fail()
@@ -350,13 +363,13 @@ export async function executeZap(args: {
         const spender =
           target.kind === 'v2'
             ? (pool as V2Pool).protocol === 'univ2'
-              ? UNI.V2_ROUTER
-              : ADDR.V2_ROUTER
+              ? chain.uniswap.v2Router
+              : up33!.V2_ROUTER
             : target.kind === 'cl-increase'
               ? target.npm
               : (pool as ClPool).protocol === 'univ3'
-                ? UNI.V3_NPM
-                : ADDR.CL_PM
+                ? chain.uniswap.v3Npm
+                : up33!.CL_PM
         if (amt > 0n && !(await ensureAllowance(token, user, spender, amt, sym))) return fail()
         break
       }
@@ -398,6 +411,8 @@ async function runDeposit(
   t1: TokenInfo,
   slipBps: number,
 ): Promise<boolean> {
+  const chain = requireEvmChain(getCurrentChain())
+  const up33 = chain.up33
   if (target.kind === 'v2') {
     const pool = target.pool
     if (pool.protocol === 'univ2') {
@@ -407,7 +422,7 @@ async function runDeposit(
         abi: uniV2PairAbi,
         address: pool.address,
         functionName: 'getReserves',
-        chainId: CHAIN_ID,
+        chainId: chain.id,
       })
       let d0 = dep0
       let d1 = dep1
@@ -419,25 +434,27 @@ async function runDeposit(
       const h = await step(`${label} ${t0.symbol}/${t1.symbol} [uni v2]`, () =>
         writeContract(wagmiConfig, {
           abi: uniV2RouterAbi,
-          address: UNI.V2_ROUTER,
+          address: chain.uniswap.v2Router,
           functionName: 'addLiquidity',
           args: [pool.token0, pool.token1, d0, d1, applySlippage(d0, slipBps), applySlippage(d1, slipBps), user, deadline()],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
       return h !== null
     }
+    if (!up33) return false
     const quote = await readContract(wagmiConfig, {
       abi: v2RouterAbi,
-      address: ADDR.V2_ROUTER,
+      address: up33.V2_ROUTER,
       functionName: 'quoteAddLiquidity',
-      args: [pool.token0, pool.token1, pool.stable, ADDR.V2_FACTORY, dep0, dep1],
-      chainId: CHAIN_ID,
+      args: [pool.token0, pool.token1, pool.stable, up33.V2_FACTORY, dep0, dep1],
+      chainId: chain.id,
     })
     const h = await step(`${label} ${t0.symbol}/${t1.symbol}`, () =>
       writeContract(wagmiConfig, {
         abi: v2RouterAbi,
-        address: ADDR.V2_ROUTER,
+        address: up33.V2_ROUTER,
         functionName: 'addLiquidity',
         args: [
           pool.token0,
@@ -450,7 +467,8 @@ async function runDeposit(
           user,
           deadline(),
         ],
-        chainId: CHAIN_ID,
+        chainId: chain.id,
+        chain: chain.viemChain,
       }),
     )
     return h !== null
@@ -484,7 +502,8 @@ async function runDeposit(
             deadline: deadline(),
           },
         ],
-        chainId: CHAIN_ID,
+        chainId: chain.id,
+        chain: chain.viemChain,
       }),
     )
     return h !== null
@@ -508,17 +527,19 @@ async function runDeposit(
       pool.protocol === 'univ3'
         ? writeContract(wagmiConfig, {
             abi: uniV3PmAbi,
-            address: UNI.V3_NPM,
+            address: chain.uniswap.v3Npm,
             functionName: 'mint',
             args: [{ ...common, fee: pool.feePpm }],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           })
         : writeContract(wagmiConfig, {
             abi: clPmAbi,
-            address: ADDR.CL_PM,
+            address: up33!.CL_PM,
             functionName: 'mint',
             args: [{ ...common, tickSpacing: pool.tickSpacing, sqrtPriceX96: 0n }],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
   )
   return h !== null

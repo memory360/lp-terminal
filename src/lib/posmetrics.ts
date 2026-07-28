@@ -7,7 +7,8 @@
 //   staked   -> UP emissions, pro-rata ACTIVE staked liquidity, in-range only
 //   unstaked -> swap fees, pro-rata active liquidity, in-range only
 //   univ3    -> always the fees branch (no gauges)
-import { ADDR } from '../config/addresses'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 import { clTokenUsd } from './apr'
 import { nowSec } from './format'
 import type { PoolStat } from './poolstats'
@@ -96,11 +97,12 @@ export function v2TokenUsd(
   const r0h = Number(pool.reserve0) / 10 ** dec0
   const r1h = Number(pool.reserve1) / 10 ** dec1
   if (!(r0h > 0) || !(r1h > 0)) return null
+  const chain = requireEvmChain(getCurrentChain())
   const anchors: Record<string, number | undefined> = {
-    [ADDR.USDG.toLowerCase()]: 1,
-    [ADDR.WETH.toLowerCase()]: wethUsd ?? undefined,
-    [ADDR.UP.toLowerCase()]: upUsd,
+    [chain.anchors.stable.toLowerCase()]: 1,
+    [chain.anchors.weth.toLowerCase()]: wethUsd ?? undefined,
   }
+  if (chain.anchors.up) anchors[chain.anchors.up.toLowerCase()] = upUsd
   const a0 = anchors[pool.token0.toLowerCase()]
   const a1 = anchors[pool.token1.toLowerCase()]
   // value balance: r0·p0 ≈ r1·p1 (true for volatile pairs; good enough for stables)

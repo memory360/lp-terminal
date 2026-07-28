@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { WEEK } from '../config/addresses'
+
+const WEEK = 604800
 
 /** epoch flips every Thursday 00:00 UTC (unix weeks) */
 export function useEpoch() {

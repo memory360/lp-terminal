@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
-import { robinhood } from '../config/chain'
-import { ENV, PUBLIC_RPC } from '../config/env'
-import { customRpc, probeRpc, saveRpcHealth, getCachedRpcHealth, isBlockedError } from '../lib/rpcPref'
+import { rpcUrlForChain } from '../config/env'
+import {
+  clearAllRpcHealth,
+  customRpc,
+  getCachedRpcHealth,
+  isBlockedError,
+  probeRpc,
+  probeSolanaRpc,
+  saveRpcHealth,
+} from '../lib/rpcPref'
+import { useCurrentChain } from './useChain'
+import { getAllChains } from '../lib/chains'
 
 export type RpcStatus = 'checking' | 'healthy' | 'fallback' | 'unavailable'
 
@@ -25,6 +34,7 @@ export type RpcHealthState = {
  * 4. Returns the current RPC status for UI display
  */
 export function useRpcHealth(): RpcHealthState {
+  const chain = useCurrentChain()
   const [state, setState] = useState<RpcHealthState>({
     status: 'checking',
     currentRpc: '',
@@ -35,16 +45,16 @@ export function useRpcHealth(): RpcHealthState {
     let mounted = true
     
     const checkRpc = async () => {
-      const userRpc = customRpc()
-      const targetRpc = userRpc || ENV.rpcUrl
-      const chainId = robinhood.id
+      const userRpc = customRpc(chain.id)
+      const targetRpc = userRpc || rpcUrlForChain(chain.key)
+      const chainId = chain.id
 
       // No RPC configured, just use public
       if (!targetRpc) {
         if (mounted) {
           setState({
             status: 'healthy',
-            currentRpc: PUBLIC_RPC,
+            currentRpc: chain.publicRpc,
             usedFallback: false,
           })
         }
@@ -52,12 +62,12 @@ export function useRpcHealth(): RpcHealthState {
       }
 
       // Check cached health first
-      const cached = getCachedRpcHealth(targetRpc)
+      const cached = getCachedRpcHealth(chain.id, targetRpc)
       if (cached) {
         if (mounted) {
           setState({
             status: cached.ok ? 'healthy' : 'fallback',
-            currentRpc: cached.ok ? targetRpc : PUBLIC_RPC,
+            currentRpc: cached.ok ? targetRpc : chain.publicRpc,
             usedFallback: !cached.ok,
             error: cached.ok ? undefined : cached.err,
           })
@@ -66,13 +76,14 @@ export function useRpcHealth(): RpcHealthState {
       }
 
       // Probe the RPC endpoint
-      const result = await probeRpc(targetRpc, chainId)
+      const result = chain.paradigm === 'solana' ? await probeSolanaRpc(targetRpc) : await probeRpc(targetRpc, chainId)
       
       if (!mounted) return
 
       // If unhealthy and likely blocked, save to cache to skip on next load
       if (!result.ok && isBlockedError(result.err)) {
         saveRpcHealth({
+          chainId,
           url: targetRpc,
           ok: false,
           err: result.err,
@@ -82,7 +93,7 @@ export function useRpcHealth(): RpcHealthState {
 
       setState({
         status: result.ok ? 'healthy' : 'fallback',
-        currentRpc: result.ok ? targetRpc : PUBLIC_RPC,
+        currentRpc: result.ok ? targetRpc : chain.publicRpc,
         usedFallback: !result.ok,
         error: result.ok ? undefined : result.err,
       })
@@ -93,7 +104,7 @@ export function useRpcHealth(): RpcHealthState {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [chain])
 
   return state
 }
@@ -103,9 +114,6 @@ export function useRpcHealth(): RpcHealthState {
  * This is useful when the user wants to retry a previously unhealthy RPC.
  */
 export function resetRpcHealth() {
-  try {
-    localStorage.removeItem('up33.rpcHealth.v1')
-  } catch {
-    /* storage unavailable — ignore */
-  }
+  clearAllRpcHealth(getAllChains().map((c) => c.id))
+  location.reload()
 }

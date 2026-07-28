@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useAccount } from 'wagmi'
 import { readContract, writeContract } from 'wagmi/actions'
-import { formatUnits, parseUnits } from 'viem'
+import { formatUnits, parseUnits, type Address } from 'viem'
 import { clPmAbi, uniV2RouterAbi, uniV3PmAbi, v2RouterAbi } from '../../abi'
-import { ADDR, CHAIN_ID, DEXSCREENER, EXPLORER, UNI, WEEK } from '../../config/addresses'
+import { getCurrentChain, useCurrentChain } from '../../hooks/useChain'
+import { requireEvmChain } from '../../lib/chains'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   alignTick,
@@ -51,6 +52,7 @@ import { ZapPanel } from '../ZapPanel'
 import { AmountRow, Btn, NumInput } from '../ui'
 
 const SLIP_BPS = 100
+const WEEK = 604800
 
 type SortKey = 'vol' | 'fees1h' | 'fees24' | 'tvl' | 'feeApr' | 'rewards' | null
 type ProtoFilter = 'all' | 'up33' | 'univ3' | 'univ2'
@@ -58,12 +60,14 @@ type PoolPositionCell = { valueUsd: number | null; tokenIds: bigint[]; protocol:
 
 export function PoolsTab() {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const pools = usePools()
   const stats = usePoolStats()
   const upPrice = useUpPrice()
   const tokenTypes = useTokenTypes('virtuals')
   const { address: user } = useAccount()
   const positions = usePositions(user)
+  const upUsd = upPrice.data ?? undefined
   const [q, setQ] = useState('') // one input: filters up33 locally + queries the indexer
   const [open, setOpen] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>('tvl') // browse default: biggest pools first
@@ -141,7 +145,7 @@ export function PoolsTab() {
         dec0: t0.decimals,
         dec1: t1.decimals,
         stat: statOf(pos.pool),
-        upUsd: upPrice.data,
+        upUsd,
         wethUsd: stats.data?.wethUsd,
       })
       addPosition(pos.pool, m.valueUsd === null ? null : m.valueUsd + (m.feesUsd ?? 0), pos.tokenId)
@@ -157,7 +161,7 @@ export function PoolsTab() {
             dec0: t0.decimals,
             dec1: t1.decimals,
             stat: statOf(pos.pool),
-            upUsd: upPrice.data,
+            upUsd,
             wethUsd: stats.data?.wethUsd,
           })
         : null
@@ -181,7 +185,7 @@ export function PoolsTab() {
       if (sort === 'tvl') return (statOf(b)?.liqUsd ?? -1) - (statOf(a)?.liqUsd ?? -1)
       if (sort === 'feeApr') return (feeAprOf(b, statOf(b)) ?? -1) - (feeAprOf(a, statOf(a)) ?? -1)
       return (
-        (emitAprOf(b, statOf(b), upPrice.data) ?? -1) - (emitAprOf(a, statOf(a), upPrice.data) ?? -1)
+        (emitAprOf(b, statOf(b), upUsd) ?? -1) - (emitAprOf(a, statOf(a), upUsd) ?? -1)
       )
     })
   }
@@ -292,7 +296,7 @@ export function PoolsTab() {
                 p={p}
                 data={data}
                 stat={statOf(p)}
-                upUsd={upPrice.data}
+                upUsd={upUsd}
                 wethUsd={stats.data?.wethUsd}
                 totalWeight={totalWeight}
                 mine={mySet.has(p.address.toLowerCase())}
@@ -328,6 +332,7 @@ function PoolRow(props: {
   rewardsSub: boolean
   virtualsSet?: Set<string>
 }) {
+  const chain = requireEvmChain(useCurrentChain())
   const { t, i18n } = useTranslation()
   const { p, data, totalWeight, stat } = props
   const t0 = tokenOf(data, p.token0)
@@ -455,14 +460,14 @@ function PoolRow(props: {
           <Btn tone="ghost" onClick={props.onToggle}>
             {props.open ? t('common.close') : t('pools.addLp')}
           </Btn>{' '}
-          <a href={`${EXPLORER}/address/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="Explorer">
+          <a href={`${chain.explorerUrl}/address/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="Explorer">
             ↗
           </a>{' '}
-          <a href={`${DEXSCREENER}/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="DexScreener">
+          <a href={`https://dexscreener.com/${chain.dexScreenerChain}/${p.address}`} target="_blank" rel="noreferrer" className="dim" title="DexScreener">
             🦅
           </a>{' '}
           <a
-            href={`https://www.geckoterminal.com/robinhood/pools/${p.address}`}
+            href={`https://www.geckoterminal.com/${chain.geckoTerminalNetwork}/pools/${p.address}`}
             target="_blank"
             rel="noreferrer"
             className="dim"
@@ -488,13 +493,19 @@ function PoolRow(props: {
 }
 
 function projectTokenOf(t0: PoolsData['tokens'][string], t1: PoolsData['tokens'][string]) {
-  const anchors = new Set([ADDR.WETH.toLowerCase(), ADDR.USDG.toLowerCase(), ADDR.UP.toLowerCase()])
+  const chain = requireEvmChain(getCurrentChain())
+  const anchors = new Set(
+    [chain.anchors.weth, chain.anchors.stable, chain.anchors.up]
+      .filter(Boolean)
+      .map((a) => (a as Address).toLowerCase()),
+  )
   if (anchors.has(t0.address.toLowerCase()) && !anchors.has(t1.address.toLowerCase())) return t1
   return t0
 }
 
 function TokenInfoCell({ token, virtualsSet }: { token: PoolsData['tokens'][string]; virtualsSet?: Set<string> }) {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const isVirtuals = token.virtuals || virtualsSet?.has(token.address.toLowerCase())
   return (
     <div className="token-info">
@@ -503,7 +514,7 @@ function TokenInfoCell({ token, virtualsSet }: { token: PoolsData['tokens'][stri
         {isVirtuals && <span className="virtuals-badge" title="Issued through Virtuals Protocol">VIRTUALS</span>}
       </span>
       <span className="pair-sub">
-        <a href={`${EXPLORER}/address/${token.address}`} target="_blank" rel="noreferrer" title="Explorer">
+        <a href={`${chain.explorerUrl}/address/${token.address}`} target="_blank" rel="noreferrer" title="Explorer">
           {shortAddr(token.address)}
         </a>{' '}
         <button
@@ -519,11 +530,12 @@ function TokenInfoCell({ token, virtualsSet }: { token: PoolsData['tokens'][stri
 }
 
 function PoolPositionLink({ position }: { position: PoolPositionCell }) {
+  const chain = requireEvmChain(useCurrentChain())
   const count = position.tokenIds.length
   const label = `LP${count > 1 ? `×${count}` : ''}(${position.valueUsd === null ? '—' : fmtUsd(position.valueUsd)})`
   const href =
     position.protocol === 'univ3'
-      ? `https://app.uniswap.org/positions/v3/robinhood${count === 1 ? `/${position.tokenIds[0]}` : ''}`
+      ? `https://app.uniswap.org/positions/v3/${chain.key}${count === 1 ? `/${position.tokenIds[0]}` : ''}`
       : '#positions'
   return (
     <span className="lp-position">
@@ -574,6 +586,7 @@ function SimLine({ sim, emitless }: { sim: AddSim | null; emitless?: boolean }) 
 
 export function AddV2({ pool, data, stat, upUsd }: { pool: V2Pool; data: PoolsData; stat?: PoolStat; upUsd?: number }) {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const { address: user } = useAccount()
   const t0 = tokenOf(data, pool.token0)
   const t1 = tokenOf(data, pool.token1)
@@ -616,7 +629,7 @@ export function AddV2({ pool, data, stat, upUsd }: { pool: V2Pool; data: PoolsDa
   )
 
   const uni2 = pool.protocol === 'univ2'
-  const router = uni2 ? UNI.V2_ROUTER : ADDR.V2_ROUTER
+  const router = uni2 ? chain.uniswap.v2Router : chain.up33!.V2_ROUTER
 
   const add = async () => {
     if (!user) return
@@ -634,7 +647,7 @@ export function AddV2({ pool, data, stat, upUsd }: { pool: V2Pool; data: PoolsDa
         await step(t('add.stepAddV2', { pair: `${t0.symbol}/${t1.symbol}` }), () =>
           writeContract(wagmiConfig, {
             abi: uniV2RouterAbi,
-            address: UNI.V2_ROUTER,
+            address: chain.uniswap.v2Router,
             functionName: 'addLiquidity',
             args: [
               pool.token0,
@@ -646,22 +659,23 @@ export function AddV2({ pool, data, stat, upUsd }: { pool: V2Pool; data: PoolsDa
               user,
               deadline(),
             ],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         )
         return
       }
       const quote = await readContract(wagmiConfig, {
         abi: v2RouterAbi,
-        address: ADDR.V2_ROUTER,
+        address: chain.up33!.V2_ROUTER,
         functionName: 'quoteAddLiquidity',
-        args: [pool.token0, pool.token1, pool.stable, ADDR.V2_FACTORY, amt0, amt1],
-        chainId: CHAIN_ID,
+        args: [pool.token0, pool.token1, pool.stable, chain.up33!.V2_FACTORY, amt0, amt1],
+        chainId: chain.id,
       })
       await step(t('add.stepAdd', { pair: `${t0.symbol}/${t1.symbol}` }), () =>
         writeContract(wagmiConfig, {
           abi: v2RouterAbi,
-          address: ADDR.V2_ROUTER,
+          address: chain.up33!.V2_ROUTER,
           functionName: 'addLiquidity',
           args: [
             pool.token0,
@@ -674,7 +688,8 @@ export function AddV2({ pool, data, stat, upUsd }: { pool: V2Pool; data: PoolsDa
             user,
             deadline(),
           ],
-          chainId: CHAIN_ID,
+          chainId: chain.id,
+          chain: chain.viemChain,
         }),
       )
     } finally {
@@ -788,6 +803,7 @@ export function AddCl({
   wethUsd?: number | null
 }) {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const { address: user } = useAccount()
   const t0 = tokenOf(data, pool.token0)
   const t1 = tokenOf(data, pool.token1)
@@ -914,7 +930,7 @@ export function AddCl({
       const amt1 = safeParse(a1, t1.decimals)
       if (amt0 === 0n && amt1 === 0n) return
       // univ3 and Slipstream NPMs share everything except mint's struct shape
-      const npm = pool.protocol === 'univ3' ? UNI.V3_NPM : ADDR.CL_PM
+      const npm = pool.protocol === 'univ3' ? chain.uniswap.v3Npm : chain.up33!.CL_PM
       if (amt0 > 0n && !(await ensureAllowance(pool.token0, user, npm, amt0, t0.symbol))) return
       if (amt1 > 0n && !(await ensureAllowance(pool.token1, user, npm, amt1, t1.symbol))) return
       // fresh price + band-edge mins (see minAmountsForLiquidity) — avoids 'PS' reverts
@@ -946,17 +962,19 @@ export function AddCl({
           pool.protocol === 'univ3'
             ? writeContract(wagmiConfig, {
                 abi: uniV3PmAbi,
-                address: UNI.V3_NPM,
+                address: chain.uniswap.v3Npm,
                 functionName: 'mint',
                 args: [{ ...common, fee: pool.feePpm }],
-                chainId: CHAIN_ID,
+                chainId: chain.id,
+                chain: chain.viemChain,
               })
             : writeContract(wagmiConfig, {
                 abi: clPmAbi,
-                address: ADDR.CL_PM,
+                address: chain.up33!.CL_PM,
                 functionName: 'mint',
                 args: [{ ...common, tickSpacing: pool.tickSpacing, sqrtPriceX96: 0n }],
-                chainId: CHAIN_ID,
+                chainId: chain.id,
+                chain: chain.viemChain,
               }),
       )
     } finally {

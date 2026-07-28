@@ -48,6 +48,31 @@ export type ClPool = PoolBase & {
 
 export type Pool = V2Pool | ClPool
 
+// Solana-specific types (base58 addresses, not viem Address).
+export type SolPoolToken = {
+  mint: string
+  symbol: string
+  decimals: number
+}
+
+export type SolPool = {
+  kind: 'solana'
+  address: string
+  program: string
+  poolType: string
+  tokenA: SolPoolToken
+  tokenB: SolPoolToken
+  vaultA: string
+  vaultB: string
+  lpMint: string | null
+  lpTotalSupply: string | null
+  feeBps: number | null
+  reserveA: string
+  reserveB: string
+  tvlUsd: number | null
+  updated: number
+}
+
 export type Protocol = {
   weekly: bigint
   epochCount: number

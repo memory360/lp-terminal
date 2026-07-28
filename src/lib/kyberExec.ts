@@ -9,6 +9,8 @@
 import { getAddress, type Address, type Hex } from 'viem'
 import { ENV } from '../config/env'
 import { t } from '../i18n'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 import { applySlippage } from './clmath'
 import { kyberBuild, type KyberRouteSummary } from './kyber'
 
@@ -28,7 +30,13 @@ export async function buildGatedKyberTx(args: {
   /** true when the input is native ETH (tx carries value) */
   nativeIn: boolean
 }): Promise<GatedKyberTx> {
-  const built = await kyberBuild(args.routeSummary, args.sender, args.recipient, args.slippageBps)
+  const built = await kyberBuild(
+    args.routeSummary,
+    args.sender,
+    args.recipient,
+    args.slippageBps,
+    requireEvmChain(getCurrentChain()).kyberChain,
+  )
   if (getAddress(built.routerAddress) !== ENV.kyberRouter) {
     throw new Error(t('kyber.routerMismatch', { addr: built.routerAddress }))
   }

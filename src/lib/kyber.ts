@@ -5,7 +5,7 @@ import { ENV } from '../config/env'
 export const NATIVE = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' as Address
 
 const HEADERS = { 'x-client-id': 'up33-terminal' }
-const api = () => `${ENV.kyberBase}/${ENV.kyberChain}/api/v1`
+const api = (chain = ENV.kyberChain) => `${ENV.kyberBase}/${chain}/api/v1`
 
 export type KyberHop = {
   pool: string
@@ -39,11 +39,11 @@ export async function kyberRoute(
   tokenIn: Address,
   tokenOut: Address,
   amountIn: bigint,
-  opts?: { signal?: AbortSignal; applyFee?: boolean },
+  opts?: { signal?: AbortSignal; applyFee?: boolean; chain?: string },
 ): Promise<KyberRouteData> {
   // base arg makes path-relative bases (/kyber proxy mode) work — new URL()
   // throws on a bare relative path; the base is ignored for absolute URLs
-  const u = new URL(`${api()}/routes`, location.origin)
+  const u = new URL(`${api(opts?.chain)}/routes`, location.origin)
   u.searchParams.set('tokenIn', tokenIn)
   u.searchParams.set('tokenOut', tokenOut)
   u.searchParams.set('amountIn', amountIn.toString())
@@ -78,8 +78,9 @@ export async function kyberBuild(
   sender: Address,
   recipient: Address,
   slippageBps: number,
+  chain?: string,
 ): Promise<KyberBuildData> {
-  const r = await fetch(`${api()}/route/build`, {
+  const r = await fetch(`${api(chain)}/route/build`, {
     method: 'POST',
     headers: { ...HEADERS, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -100,12 +101,12 @@ export async function kyberBuild(
 
 export type KyberToken = { address: Address; symbol: string; decimals: number; name?: string }
 
-/** Registered token list for chainId 4663 from ks-setting (seed for the picker). */
-export async function kyberTokenList(): Promise<KyberToken[]> {
+/** Registered token list from ks-setting (seed for the picker). */
+export async function kyberTokenList(chainId = 4663): Promise<KyberToken[]> {
   const base = ENV.proxied ? '/kyber-setting' : 'https://ks-setting.kyberswap.com'
   const out: KyberToken[] = []
   for (let page = 1; page <= 3; page++) {
-    const r = await fetch(`${base}/api/v1/tokens?chainIds=4663&pageSize=100&page=${page}`)
+    const r = await fetch(`${base}/api/v1/tokens?chainIds=${chainId}&pageSize=100&page=${page}`)
     const j = await r.json().catch(() => null)
     const toks: any[] = j?.data?.tokens ?? []
     for (const t of toks) {

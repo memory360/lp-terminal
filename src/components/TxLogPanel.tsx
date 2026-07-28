@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EXPLORER } from '../config/addresses'
+import { useCurrentChain } from '../hooks/useChain'
 import { txlog, type LogLine } from '../lib/txlog'
 
 function glyph(l: LogLine): string {
@@ -18,6 +18,7 @@ function glyph(l: LogLine): string {
 
 export function TxLogPanel() {
   const { t } = useTranslation()
+  const chain = useCurrentChain()
   const lines = useSyncExternalStore(txlog.subscribe, txlog.get)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -44,7 +45,7 @@ export function TxLogPanel() {
             {glyph(l)} {l.text}
           </span>
           {l.hash && (
-            <a href={`${EXPLORER}/tx/${l.hash}`} target="_blank" rel="noreferrer">
+            <a href={`${chain.explorerUrl}/tx/${l.hash}`} target="_blank" rel="noreferrer">
               tx↗
             </a>
           )}

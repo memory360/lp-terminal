@@ -1,18 +1,13 @@
-import { defineChain } from 'viem'
-import { PUBLIC_RPC } from './env'
+// Re-export EVM chain definitions from the shared adapter registry for wagmi.
+// Runtime chain selection is handled by src/hooks/useChain.ts.
+// Solana is excluded here because it is not EVM-compatible and uses its own
+// wallet/transport stack.
+import { bsc as bscAdapter, getAllChains, requireEvmChain, robinhood as robinhoodAdapter } from '../lib/chains'
+import { isEvmChain } from '../lib/chains'
 
-export const robinhood = defineChain({
-  id: 4663,
-  name: 'Robinhood Chain',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  // chain METADATA always carries the key-free public RPC — this is what a
-  // wallet_addEthereumChain suggestion hands to users' wallets. The app's own
-  // reads go through the wagmi transport (see wagmi.ts), never this URL.
-  rpcUrls: { default: { http: [PUBLIC_RPC] } },
-  blockExplorers: {
-    default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' },
-  },
-  contracts: {
-    multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' },
-  },
-})
+export const robinhood = { ...requireEvmChain(robinhoodAdapter).viemChain, id: 4663 } as const
+export const bsc = { ...requireEvmChain(bscAdapter).viemChain, id: 56 } as const
+
+export const supportedChains = getAllChains()
+  .filter(isEvmChain)
+  .map((c) => ({ ...c.viemChain, id: c.id }))

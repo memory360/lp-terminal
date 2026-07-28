@@ -5,14 +5,16 @@ import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 import { fetchUniIndex } from '../lib/uniIndex'
 import type { PoolStat } from '../lib/poolstats'
+import { useCurrentChain } from './useChain'
 
 export function useUniPoolStats(addrs: Address[]) {
+  const chain = useCurrentChain()
   const key = addrs
     .map((a) => a.toLowerCase())
     .sort()
     .join(',')
   return useQuery({
-    queryKey: ['uniPoolStats', key],
+    queryKey: ['uniPoolStats', chain.id, key],
     enabled: addrs.length > 0,
     refetchInterval: 60_000,
     staleTime: 50_000,
@@ -20,7 +22,7 @@ export function useUniPoolStats(addrs: Address[]) {
       const out: Record<string, PoolStat> = {}
       await Promise.all(
         addrs.map(async (a) => {
-          const r = await fetchUniIndex(a, 0, undefined, 4).catch(() => null)
+          const r = await fetchUniIndex(a, 0, undefined, 4, chain.indexerUrl).catch(() => null)
           if (r) Object.assign(out, r.stats)
         }),
       )

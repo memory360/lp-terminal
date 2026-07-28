@@ -1,31 +1,41 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
-import { ADDR, EXPLORER } from '../config/addresses'
 import { NATIVE, kyberTokenList } from '../lib/kyber'
 import { walletTokensOf } from '../lib/walletTokens'
 import type { TokenInfo } from '../types'
+import { requireEvmChain } from '../lib/chains'
+import { useCurrentChain } from './useChain'
 import { usePools } from './usePools'
-
-const PINNED: string[] = [NATIVE, ADDR.WETH, ADDR.USDG, ADDR.UP].map((a) => a.toLowerCase())
 
 /** merged token list for the swap picker: ETH + pool tokens + ks-setting registry */
 export function useTokenList(user?: Address): TokenInfo[] {
+  const chain = requireEvmChain(useCurrentChain())
   const pools = usePools()
+  const pinned = [
+    NATIVE,
+    chain.anchors.weth,
+    chain.anchors.stable,
+    chain.anchors.up,
+  ].filter(Boolean) as Address[]
+  const pinnedSet = new Set(pinned.map((a) => a.toLowerCase()))
+
   const kyber = useQuery({
-    queryKey: ['kyberTokens'],
+    queryKey: ['kyberTokens', chain.id],
     staleTime: 10 * 60_000,
     refetchInterval: false,
-    queryFn: kyberTokenList,
+    queryFn: async () => kyberTokenList(chain.id),
   })
   const wallet = useQuery({
-    queryKey: ['walletTokens', user],
-    enabled: !!user,
+    queryKey: ['walletTokens', chain.id, user],
+    enabled: !!user && !!chain.explorerApi.walletTokenBalancesUrl,
     staleTime: 15_000,
     refetchInterval: 30_000,
     retry: 1,
     queryFn: async () => {
-      const r = await fetch(`${EXPLORER}/api/v2/addresses/${user}/token-balances`)
-      if (!r.ok) throw new Error(`blockscout ${r.status}`)
+      const url = chain.explorerApi.walletTokenBalancesUrl?.(user!)
+      if (!url) return []
+      const r = await fetch(url)
+      if (!r.ok) throw new Error(`explorer ${r.status}`)
       return walletTokensOf(await r.json())
     },
   })
@@ -33,8 +43,8 @@ export function useTokenList(user?: Address): TokenInfo[] {
   const map = new Map<string, TokenInfo>()
   map.set(NATIVE.toLowerCase(), {
     address: NATIVE as Address,
-    symbol: 'ETH',
-    decimals: 18,
+    symbol: chain.nativeCurrency.symbol,
+    decimals: chain.nativeCurrency.decimals,
     native: true,
   })
   if (pools.data) {
@@ -51,10 +61,11 @@ export function useTokenList(user?: Address): TokenInfo[] {
   }
 
   const held = new Set((wallet.data ?? []).map((t) => t.info.address.toLowerCase()))
+  const pinnedOrder = Array.from(pinnedSet)
   const list = [...map.values()]
   list.sort((a, b) => {
-    const ai = PINNED.indexOf(a.address.toLowerCase())
-    const bi = PINNED.indexOf(b.address.toLowerCase())
+    const ai = pinnedOrder.indexOf(a.address.toLowerCase())
+    const bi = pinnedOrder.indexOf(b.address.toLowerCase())
     if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
     const ah = held.has(a.address.toLowerCase())
     const bh = held.has(b.address.toLowerCase())

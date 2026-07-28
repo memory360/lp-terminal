@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { usePublicClient } from 'wagmi'
 import type { Address, PublicClient } from 'viem'
 import { clGaugeAbi, clPmAbi, erc20Abi, uniV3FactoryAbi, uniV3PmAbi, uniV3PoolAbi, v2GaugeAbi, v2PoolAbi } from '../abi'
-import { ADDR, UNI } from '../config/addresses'
 import { MAX_UINT128, getAmountsForLiquidity, getSqrtRatioAtTick } from '../lib/clmath'
+import { requireEvmChain, type ChainAdapter } from '../lib/chains'
 import type { ClPool, ClPosition, PoolsData, PositionsData, TokenInfo, V2Pool, V2Position } from '../types'
 import { usePools } from './usePools'
+import { useCurrentChain } from './useChain'
 
 type McRes = { status: 'success' | 'failure'; result?: unknown }
 async function mc(pc: PublicClient, contracts: unknown[]): Promise<McRes[]> {
@@ -45,10 +46,12 @@ async function fetchUniPositions(
   pc: PublicClient,
   user: Address,
   pools: PoolsData,
+  chain: ChainAdapter,
 ): Promise<{ cl: ClPosition[]; tokens: Record<string, TokenInfo> }> {
+  const evmChain = requireEvmChain(chain)
   const none = { cl: [], tokens: {} }
   const cntRes = await mc(pc, [
-    { abi: uniV3PmAbi, address: UNI.V3_NPM, functionName: 'balanceOf', args: [user] },
+    { abi: uniV3PmAbi, address: evmChain.uniswap.v3Npm, functionName: 'balanceOf', args: [user] },
   ])
   const count = Number(ok<bigint>(cntRes[0]) ?? 0n)
   if (count === 0) return none
@@ -57,7 +60,7 @@ async function fetchUniPositions(
     pc,
     Array.from({ length: Math.min(count, 100) }, (_, i) => ({
       abi: uniV3PmAbi,
-      address: UNI.V3_NPM,
+      address: evmChain.uniswap.v3Npm,
       functionName: 'tokenOfOwnerByIndex',
       args: [user, BigInt(i)],
     })),
@@ -67,7 +70,7 @@ async function fetchUniPositions(
 
   const posRes = await mc(
     pc,
-    ids.map((id) => ({ abi: uniV3PmAbi, address: UNI.V3_NPM, functionName: 'positions', args: [id] })),
+    ids.map((id) => ({ abi: uniV3PmAbi, address: evmChain.uniswap.v3Npm, functionName: 'positions', args: [id] })),
   )
   const raws = ids
     .map((id, j) => ({ id, raw: ok<RawUniPos>(posRes[j]) }))
@@ -90,7 +93,7 @@ async function fetchUniPositions(
     pc,
     keys.map(([, k]) => ({
       abi: uniV3FactoryAbi,
-      address: UNI.V3_FACTORY,
+      address: evmChain.uniswap.v3Factory,
       functionName: 'getPool',
       args: [k.token0, k.token1, k.fee],
     })),
@@ -191,16 +194,19 @@ async function fetchPositions(
   pc: PublicClient,
   user: Address,
   pools: PoolsData,
+  chain: ChainAdapter,
 ): Promise<PositionsData> {
+  const evmChain = requireEvmChain(chain)
   // univ3 discovery runs concurrently with the UP33 passes below
-  const uniP = fetchUniPositions(pc, user, pools).catch(() => ({ cl: [], tokens: {} }))
+  const uniP = fetchUniPositions(pc, user, pools, evmChain).catch(() => ({ cl: [], tokens: {} }))
+  const up33 = evmChain.up33
   const clPools = pools.pools.filter((p): p is ClPool => p.kind === 'cl')
   const v2Pools = pools.pools.filter((p): p is V2Pool => p.kind === 'v2')
   const clGauges = clPools.filter((p) => p.gauge)
 
   // pass 1: counts + per-pool balances
-  const pass1: unknown[] = [
-    { abi: clPmAbi, address: ADDR.CL_PM, functionName: 'balanceOf', args: [user] },
+  const pass1: unknown[] = up33 ? [
+    { abi: clPmAbi, address: up33.CL_PM, functionName: 'balanceOf', args: [user] },
     ...clGauges.map((p) => ({
       abi: clGaugeAbi,
       address: p.gauge!,
@@ -218,10 +224,10 @@ async function fetchPositions(
           ]
         : []),
     ]),
-  ]
+  ] : []
   const r1 = await mc(pc, pass1)
   let idx = 0
-  const walletCount = Number(ok<bigint>(r1[idx++]) ?? 0n)
+  const walletCount = up33 ? Number(ok<bigint>(r1[idx++]) ?? 0n) : 0
   const stakedIdsByGauge: { pool: ClPool; ids: bigint[] }[] = []
   for (const p of clGauges) {
     const ids = ok<readonly bigint[]>(r1[idx++]) ?? []
@@ -255,7 +261,7 @@ async function fetchPositions(
     pc,
     Array.from({ length: Math.min(walletCount, 100) }, (_, i) => ({
       abi: clPmAbi,
-      address: ADDR.CL_PM,
+      address: up33!.CL_PM,
       functionName: 'tokenOfOwnerByIndex',
       args: [user, BigInt(i)],
     })),
@@ -267,12 +273,12 @@ async function fetchPositions(
   const pass3: unknown[] = [
     ...walletIds.map((id) => ({
       abi: clPmAbi,
-      address: ADDR.CL_PM,
+      address: up33!.CL_PM,
       functionName: 'positions',
       args: [id],
     })),
     ...stakedFlat.flatMap(({ pool, id }) => [
-      { abi: clPmAbi, address: ADDR.CL_PM, functionName: 'positions', args: [id] },
+      { abi: clPmAbi, address: up33!.CL_PM, functionName: 'positions', args: [id] },
       { abi: clGaugeAbi, address: pool.gauge!, functionName: 'earned', args: [user, id] },
     ]),
   ]
@@ -345,7 +351,7 @@ async function fetchPositions(
         try {
           const sim = await pc.simulateContract({
             abi: clPmAbi,
-            address: p.pool.protocol === 'univ3' ? UNI.V3_NPM : ADDR.CL_PM,
+            address: p.pool.protocol === 'univ3' ? evmChain.uniswap.v3Npm : up33!.CL_PM,
             functionName: 'collect',
             args: [
               {
@@ -388,12 +394,13 @@ async function fetchPositions(
 }
 
 export function usePositions(user?: Address) {
-  const pc = usePublicClient()
+  const chain = useCurrentChain()
+  const pc = usePublicClient({ chainId: chain.id })
   const pools = usePools()
   return useQuery({
-    queryKey: ['positions', user],
+    queryKey: ['positions', chain.id, user],
     enabled: !!pc && !!user && !!pools.data,
     refetchInterval: 15_000,
-    queryFn: () => fetchPositions(pc as PublicClient, user!, pools.data!),
+    queryFn: () => fetchPositions(pc as PublicClient, user!, pools.data!, chain),
   })
 }

@@ -10,7 +10,8 @@
 //   all-token1 amount = L·(B − A)       (price at/above B)
 //   ⇒ full-fill average price (token1 per token0) = A·B — geometric mean of bounds
 import { parseAbi, parseEventLogs, type Address, type TransactionReceipt } from 'viem'
-import { ADDR } from '../config/addresses'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 
 export type LimitSide = 'sell0' | 'sell1'
 
@@ -87,10 +88,12 @@ const erc721TransferAbi = parseAbi([
 
 /** tokenId freshly minted to `user` by the CL position manager in this receipt */
 export function mintedTokenId(rcpt: TransactionReceipt, user: Address): bigint | null {
+  const pm = requireEvmChain(getCurrentChain()).up33?.CL_PM
+  if (!pm) return null
   const logs = parseEventLogs({ abi: erc721TransferAbi, logs: rcpt.logs, eventName: 'Transfer' })
   for (const l of logs) {
     if (
-      l.address.toLowerCase() === ADDR.CL_PM.toLowerCase() &&
+      l.address.toLowerCase() === pm.toLowerCase() &&
       l.args.from === '0x0000000000000000000000000000000000000000' &&
       l.args.to?.toLowerCase() === user.toLowerCase()
     ) {

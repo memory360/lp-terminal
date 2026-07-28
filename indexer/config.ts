@@ -4,16 +4,16 @@
 // which is why the public RPC is duplicated here instead of imported.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { currentChain } from './chains'
+import { isEvmChain } from '../src/lib/chains'
 
-export { ADDR, UNI } from '../src/config/addresses'
-
-export const PUBLIC_RPC = 'https://rpc.mainnet.chain.robinhood.com'
-export const BLOCKSCOUT = 'https://robinhoodchain.blockscout.com'
+export const PUBLIC_RPC = currentChain.publicRpc
+export const BLOCKSCOUT = isEvmChain(currentChain) ? currentChain.explorerApi.base : ''
 export const GT = 'https://api.geckoterminal.com/api/v2'
 
 export const PORT = Number(process.env.INDEXER_PORT || 8787)
 export const DB_PATH =
-  process.env.INDEXER_DB || fileURLToPath(new URL('./data/index.db', import.meta.url))
+  process.env.INDEXER_DB || fileURLToPath(new URL(`./data/index-${currentChain.key}.db`, import.meta.url))
 
 export const TUNE = {
   tailMs: 10_000, // factory tail + v2 allPairsLength poll
@@ -30,13 +30,15 @@ export const TUNE = {
   gtFreshSecs: 1_800, // GT prices younger than this are never overwritten by propagation
 }
 
-/** repo-root .env `RPC` (SECRET — never log/print it). Fallback: key-free public RPC. */
+/** repo-root .env `RPC_{CHAIN_KEY}` then `RPC` (SECRET — never log/print it). Fallback: key-free public RPC. */
 export function rpcUrl(): string {
-  const env = process.env.RPC?.trim()
+  const key = currentChain.key.toUpperCase()
+  const env = process.env[`RPC_${key}`]?.trim() || (currentChain.key === 'robinhood' ? process.env.RPC?.trim() : '')
   if (env) return env
   try {
     const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
-    const m = text.match(/^\s*RPC\s*=\s*(\S+)\s*$/m)
+    const chainRpc = text.match(new RegExp(`^\\s*RPC_${key}\\s*=\\s*(\\S+)\\s*$`, 'm'))
+    const m = chainRpc ?? (currentChain.key === 'robinhood' ? text.match(/^\s*RPC\s*=\s*(\S+)\s*$/m) : null)
     if (m) return m[1]
   } catch {
     /* no repo .env — public RPC below */

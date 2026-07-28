@@ -12,8 +12,9 @@ import {
   v2PoolAbi,
   voterAbi,
 } from '../abi'
-import { ADDR } from '../config/addresses'
+import { requireEvmChain, type ChainAdapter } from '../lib/chains'
 import type { ClPool, Pool, PoolsData, TokenInfo, V2Pool } from '../types'
+import { useCurrentChain } from './useChain'
 
 type McRes = { status: 'success' | 'failure'; result?: unknown; error?: Error }
 
@@ -46,7 +47,23 @@ export function saveTokenCache(cache: Record<string, TokenInfo>) {
   }
 }
 
-export async function fetchPools(pc: PublicClient): Promise<PoolsData> {
+export async function fetchPools(pc: PublicClient, chain: ChainAdapter): Promise<PoolsData> {
+  const evmChain = requireEvmChain(chain)
+  if (!evmChain.up33) {
+    return {
+      pools: [],
+      tokens: {},
+      protocol: {
+        weekly: 0n,
+        epochCount: 0,
+        activePeriod: 0,
+        totalWeight: 0n,
+        capMode: null,
+        blockNumber: await pc.getBlockNumber().catch(() => 0n),
+      },
+    }
+  }
+  const ADDR = evmChain.up33
   const head = await mc(pc, [
     { abi: v2FactoryAbi, address: ADDR.V2_FACTORY, functionName: 'allPoolsLength' },
     { abi: clFactoryAbi, address: ADDR.CL_FACTORY, functionName: 'allPoolsLength' },
@@ -265,12 +282,13 @@ export async function fetchPools(pc: PublicClient): Promise<PoolsData> {
 }
 
 export function usePools() {
-  const pc = usePublicClient()
+  const chain = useCurrentChain()
+  const pc = usePublicClient({ chainId: chain.id })
   return useQuery({
-    queryKey: ['pools'],
+    queryKey: ['pools', chain.id],
     enabled: !!pc,
     refetchInterval: 20_000,
-    queryFn: () => fetchPools(pc as PublicClient),
+    queryFn: () => fetchPools(pc as PublicClient, chain),
   })
 }
 

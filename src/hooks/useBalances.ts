@@ -3,16 +3,18 @@ import { usePublicClient } from 'wagmi'
 import type { Address, PublicClient } from 'viem'
 import { erc20Abi } from '../abi'
 import { NATIVE } from '../lib/kyber'
+import { useCurrentChain } from './useChain'
 
 /** balances for a set of tokens (NATIVE sentinel included). key = lowercase addr */
 export function useBalances(user?: Address, tokens: Address[] = []) {
-  const pc = usePublicClient()
+  const chain = useCurrentChain()
+  const pc = usePublicClient({ chainId: chain.id })
   const key = tokens
     .map((t) => t.toLowerCase())
     .sort()
     .join(',')
   return useQuery({
-    queryKey: ['balances', user, key],
+    queryKey: ['balances', chain.id, user, key],
     enabled: !!pc && !!user && tokens.length > 0,
     refetchInterval: 15_000,
     queryFn: async () => {

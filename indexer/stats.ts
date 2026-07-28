@@ -7,13 +7,15 @@
 //
 // NOTE: GT has no UP33 dex entry — UP33 pool stats stay on the frontend's
 // existing dexscreener path; this indexer only serves the Uniswap catalog.
+import { currentChain } from './chains'
 import { GT, TUNE, log, sleep } from './config'
 import { poolRow, setTokenPrice, upsertStats } from './store'
 
+const net = currentChain.geckoTerminalNetwork
 const LISTS = [
-  { path: '/networks/robinhood/pools', label: 'network' },
-  { path: '/networks/robinhood/dexes/uniswap-v2-robinhood/pools', label: 'uni-v2' },
-  { path: '/networks/robinhood/dexes/uniswap-v3-robinhood/pools', label: 'uni-v3' },
+  { path: `/networks/${net}/pools`, label: 'network' },
+  { path: `/networks/${net}/dexes/uniswap-v2-${net}/pools`, label: 'uni-v2' },
+  { path: `/networks/${net}/dexes/uniswap-v3-${net}/pools`, label: 'uni-v3' },
 ]
 
 type GtPool = {
@@ -50,8 +52,10 @@ const num = (x: unknown): number | null => {
   const n = Number(x)
   return Number.isFinite(n) ? n : null
 }
-const tokenOfId = (id?: string): string | null =>
-  id?.startsWith('robinhood_0x') ? id.slice('robinhood_'.length).toLowerCase() : null
+const tokenOfId = (id?: string): string | null => {
+  const prefix = `${currentChain.key}_0x`
+  return id?.startsWith(prefix) ? id.slice(currentChain.key.length + 1).toLowerCase() : null
+}
 
 function ingest(p: GtPool): boolean {
   const a = p.attributes

@@ -1,10 +1,11 @@
 import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
 import type { Address, Hex, TransactionReceipt } from 'viem'
-import { erc20Abi, parseAbi, parseEventLogs } from 'viem'
+import { erc20Abi, parseAbi, parseEventLogs, zeroAddress } from 'viem'
 import { writeContract } from 'wagmi/actions'
 import { wagmiConfig } from '../config/wagmi'
 import { queryClient } from '../config/query'
-import { ADDR, CHAIN_ID } from '../config/addresses'
+import { getCurrentChain } from '../hooks/useChain'
+import { requireEvmChain } from './chains'
 import { t } from '../i18n'
 import { fmtAmount } from './format'
 import { NATIVE } from './kyber'
@@ -40,12 +41,13 @@ const slot0PrefixAbi = parseAbi([
 
 /** live pool price for slippage math — never trust the cached pools query for mins */
 export async function fetchSqrtPriceX96(pool: Address): Promise<bigint> {
+  const chain = getCurrentChain()
   const s0 = await readContract(wagmiConfig, {
     abi: slot0PrefixAbi,
     address: pool,
     functionName: 'slot0',
-    chainId: CHAIN_ID,
-  })
+    chainId: chain.id,
+  } as const)
   return s0[0]
 }
 
@@ -65,9 +67,10 @@ export async function step(
 ): Promise<Hex | null> {
   const id = txlog.push('pending', t('tx.confirm', { label }))
   try {
+    const chain = getCurrentChain()
     const hash = await send()
     txlog.update(id, { text: t('tx.pending', { label }), hash })
-    const rcpt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: CHAIN_ID })
+    const rcpt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: chain.id })
     if (rcpt.status !== 'success') {
       txlog.update(id, { kind: 'err', text: t('tx.reverted', { label }), hash })
       invalidateAll()
@@ -108,12 +111,15 @@ export function receivedOf(rcpt: TransactionReceipt, token: Address, to: Address
  */
 export function offerSwapClaimedUp(user: Address) {
   return (rcpt: TransactionReceipt) => {
-    const total = receivedOf(rcpt, ADDR.UP, user)
+    const chain = requireEvmChain(getCurrentChain())
+    const up = chain.anchors.up ?? zeroAddress
+    if (up === zeroAddress) return
+    const total = receivedOf(rcpt, up, user)
     if (total === 0n) return
     txlog.push('info', t('tx.received', { amt: fmtAmount(total, 18) }), rcpt.transactionHash, {
       label: t('tx.swapToEth'),
       onClick: () => {
-        setSwapIntent({ tokenIn: ADDR.UP, tokenOut: NATIVE, amount: total })
+        setSwapIntent({ tokenIn: up, tokenOut: NATIVE, amount: total })
         location.hash = 'swap'
       },
     })
@@ -128,13 +134,14 @@ export async function ensureAllowance(
   amount: bigint,
   symbol: string,
 ): Promise<boolean> {
+  const chain = getCurrentChain()
   const current = await readContract(wagmiConfig, {
     abi: erc20Abi,
     address: token,
     functionName: 'allowance',
     args: [owner, spender],
-    chainId: CHAIN_ID,
-  })
+    chainId: chain.id,
+  } as const)
   if (current >= amount) return true
   const h = await step(t('tx.approve', { sym: symbol }), () =>
     writeContract(wagmiConfig, {
@@ -142,8 +149,8 @@ export async function ensureAllowance(
       address: token,
       functionName: 'approve',
       args: [spender, amount],
-      chainId: CHAIN_ID,
-    }),
+      chainId: chain.id,
+    } as never),
   )
   return h !== null
 }

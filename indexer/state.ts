@@ -13,7 +13,9 @@
 // sides (single-priced-side pools: 2× that side, flagged approximate).
 import { erc20Abi, formatUnits } from 'viem'
 import { uniV2PairAbi, uniV3PoolAbi } from '../src/abi'
-import { ADDR, TUNE, log, now } from './config'
+import { currentChain } from './chains'
+import { requireEvmChain } from '../src/lib/chains'
+import { log, now, TUNE } from './config'
 import { mc, ok, type Call } from './rpc'
 import {
   allTokens,
@@ -155,9 +157,10 @@ const statesQ = () =>
 export function reprice(): { priced: number; tvlPools: number } {
   const decs = new Map(allTokens().map((t) => [t.address, t.decimals]))
   const prices = loadPrices()
-  // bootstrap anchor before the first GT cycle: USDG ≈ $1 (GT overwrites it)
-  if (!prices.has(ADDR.USDG.toLowerCase()))
-    prices.set(ADDR.USDG.toLowerCase(), { usd: 1, depth: 1, src: 'anchor', updated: now() })
+  // bootstrap anchor before the first GT cycle: stable token ≈ $1 (GT overwrites it)
+  const stable = requireEvmChain(currentChain).anchors.stable.toLowerCase()
+  if (!prices.has(stable))
+    prices.set(stable, { usd: 1, depth: 1, src: 'anchor', updated: now() })
 
   const states = statesQ()
   const human = (raw: string, addr: string) => Number(formatUnits(BigInt(raw), decs.get(addr) ?? 18))

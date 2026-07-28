@@ -8,7 +8,8 @@ import { useAccount } from 'wagmi'
 import { writeContract } from 'wagmi/actions'
 import { formatUnits, parseUnits, type Address } from 'viem'
 import { clPmAbi } from '../../abi'
-import { ADDR, CHAIN_ID } from '../../config/addresses'
+import { useCurrentChain } from '../../hooks/useChain'
+import { requireEvmChain } from '../../lib/chains'
 import { wagmiConfig } from '../../config/wagmi'
 import {
   alignTick,
@@ -85,6 +86,7 @@ function bandTicks(
 
 export function LimitPanel() {
   const { t } = useTranslation()
+  const chain = requireEvmChain(useCurrentChain())
   const { address: user } = useAccount()
   const pools = usePools()
   const data = pools.data
@@ -135,17 +137,19 @@ export function LimitPanel() {
   // defaults: sell UP → WETH (the "exit farm rewards" case)
   useEffect(() => {
     if (!sellAddr && sellList.length) {
-      const up = sellList.find((t) => t.address.toLowerCase() === ADDR.UP.toLowerCase())
+      const up = chain.anchors.up
+        ? sellList.find((t) => t.address.toLowerCase() === chain.anchors.up!.toLowerCase())
+        : null
       setSellAddr((up ?? sellList[0]).address)
     }
-  }, [sellList, sellAddr])
+  }, [sellList, sellAddr, chain.anchors.up])
   useEffect(() => {
     if (!buyList.length) return
     if (!buyAddr || !buyList.some((t) => t.address.toLowerCase() === buyAddr.toLowerCase())) {
-      const weth = buyList.find((t) => t.address.toLowerCase() === ADDR.WETH.toLowerCase())
+      const weth = buyList.find((t) => t.address.toLowerCase() === chain.anchors.weth.toLowerCase())
       setBuyAddr((weth ?? buyList[0]).address)
     }
-  }, [buyList, buyAddr])
+  }, [buyList, buyAddr, chain.anchors.weth])
 
   const pairPools = useMemo(() => {
     if (!sellAddr || !buyAddr) return []
@@ -173,6 +177,7 @@ export function LimitPanel() {
   const balSell = sellAddr ? bal.data?.[sellAddr.toLowerCase()] : undefined
   const upPrice = useUpPrice()
   const stats = usePoolStats()
+  const upUsd = upPrice.data ?? undefined
 
   const t0 = pool ? (data?.tokens[pool.token0.toLowerCase()] ?? null) : null
   const t1 = pool ? (data?.tokens[pool.token1.toLowerCase()] ?? null) : null
@@ -181,10 +186,10 @@ export function LimitPanel() {
   // USD context via USDG/WETH/UP anchors (display only)
   const usd = useMemo(() => {
     if (!pool || !t0 || !t1 || !side) return null
-    const px = clTokenUsd(pool, t0.decimals, t1.decimals, upPrice.data, stats.data?.wethUsd)
+    const px = clTokenUsd(pool, t0.decimals, t1.decimals, upUsd, stats.data?.wethUsd)
     if (!px) return null
     return { sell: side === 'sell0' ? px.p0 : px.p1, buy: side === 'sell0' ? px.p1 : px.p0 }
-  }, [pool, t0, t1, side, upPrice.data, stats.data?.wethUsd])
+  }, [pool, t0, t1, side, upUsd, stats.data?.wethUsd])
 
   const preset = BANDS.find((b) => b.id === bandId)
   const loPct = preset ? preset.lo : Number(loStr)
@@ -245,10 +250,10 @@ export function LimitPanel() {
   }
 
   const place = async () => {
-    if (!user || !pool || !side || !ticks || !sell || !buy || amt === 0n || !calc) return
+    if (!user || !pool || !side || !ticks || !sell || !buy || amt === 0n || !calc || !chain.up33) return
     setBusy(true)
     try {
-      if (!(await ensureAllowance(sell.address, user, ADDR.CL_PM, amt, sell.symbol))) return
+      if (!(await ensureAllowance(sell.address, user, chain.up33.CL_PM, amt, sell.symbol))) return
       // re-check with a fresh price: the band must still be strictly out of range
       const fresh = await fetchSqrtPriceX96(pool.address)
       const stillOut = side === 'sell0' ? fresh < calc.sqrtA : fresh > calc.sqrtB
@@ -262,7 +267,7 @@ export function LimitPanel() {
         () =>
           writeContract(wagmiConfig, {
             abi: clPmAbi,
-            address: ADDR.CL_PM,
+            address: chain.up33!.CL_PM,
             functionName: 'mint',
             args: [
               {
@@ -280,7 +285,8 @@ export function LimitPanel() {
                 sqrtPriceX96: 0n,
               },
             ],
-            chainId: CHAIN_ID,
+            chainId: chain.id,
+            chain: chain.viemChain,
           }),
         {
           onSuccess: (rcpt) => {
@@ -318,6 +324,7 @@ export function LimitPanel() {
       </div>
     )
   if (!sell) return <div className="dim">{t('limit.noPools')}</div>
+  if (!chain.up33) return <div className="dim">{t('limit.unsupported')}</div>
 
   const amtH = sell && amt > 0n ? Number(formatUnits(amt, sell.decimals)) : 0
 

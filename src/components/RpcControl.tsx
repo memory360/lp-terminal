@@ -3,19 +3,20 @@
 // transport is resolved once at startup).
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CHAIN_ID } from '../config/addresses'
-import { ENV } from '../config/env'
+import { rpcUrlForChain } from '../config/env'
+import { useCurrentChain } from '../hooks/useChain'
 import { customRpc, isValidRpcUrl, probeRpc, setCustomRpc } from '../lib/rpcPref'
 
 export function RpcControl() {
   const { t } = useTranslation()
+  const chain = useCurrentChain()
   const [open, setOpen] = useState(false)
   const [val, setVal] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  const cur = customRpc()
-  const label = cur ? 'CUSTOM' : ENV.rpcUrl ? 'ENV' : 'DEFAULT'
+  const cur = customRpc(chain.id)
+  const label = cur ? 'CUSTOM' : rpcUrlForChain(chain.key) ? 'ENV' : 'DEFAULT'
 
   if (!open)
     return (
@@ -38,19 +39,19 @@ export function RpcControl() {
   const apply = async () => {
     if (!valid || busy) return
     if (v === '') {
-      setCustomRpc('')
+      setCustomRpc(chain.id, '')
       location.reload()
       return
     }
     setBusy(true)
     setErr('')
-    const res = await probeRpc(v, CHAIN_ID)
+    const res = await probeRpc(v, chain.id)
     setBusy(false)
     if (!res.ok) {
       setErr(res.err)
       return
     }
-    setCustomRpc(v)
+    setCustomRpc(chain.id, v)
     location.reload()
   }
 
@@ -80,7 +81,7 @@ export function RpcControl() {
         <button
           className="chip"
           onClick={() => {
-            setCustomRpc('')
+            setCustomRpc(chain.id, '')
             location.reload()
           }}
         >
