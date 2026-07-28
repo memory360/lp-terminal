@@ -440,7 +440,8 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .liq-axis { stroke: var(--line-hi); }
 .liq-grid { stroke: var(--line); }
 .liq-area { fill: color-mix(in srgb, var(--green) 32%, transparent); stroke: var(--green); stroke-width: 1; }
-.liq-selected { fill: color-mix(in srgb, var(--green) 18%, transparent); stroke: var(--green); stroke-width: 2; }
+.liq-selected { fill: color-mix(in srgb, var(--green) 14%, transparent); }
+.liq-selected-edge { stroke: var(--green); stroke-width: 2; }
 .liq-current { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 5 4; }
 .liq-chart-caption { color: var(--dim); font-size: 0.78em; text-align: center; }
 @media (max-width: 1100px) {

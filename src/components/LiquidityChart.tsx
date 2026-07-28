@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { usePublicClient } from 'wagmi'
 import type { PublicClient } from 'viem'
 import { clPoolAbi, uniV3PoolAbi } from '../abi'
-import { MAX_TICK, MIN_TICK, tickToPrice } from '../lib/clmath'
+import { MAX_TICK, MIN_TICK, tickDeltaForPct, tickToPrice } from '../lib/clmath'
 import { fmtNum } from '../lib/format'
 import type { ClPool, TokenInfo } from '../types'
 import { useCurrentChain } from '../hooks/useChain'
@@ -12,7 +12,7 @@ import { Btn } from './ui'
 type TickLiquidity = { tick: number; net: bigint }
 type Distribution = { lower: number; upper: number; ticks: TickLiquidity[] }
 
-const WORD_RADIUS = 12 // 25 bitmap calls max, about ±30% around the current price
+const VIEW_PCT = 0.35 // enough padding around the widest ±30% preset
 
 export function LiquidityChart(props: {
   pool: ClPool
@@ -65,10 +65,14 @@ export function LiquidityChart(props: {
       <svg viewBox="0 0 720 210" role="img" aria-label={t('add.liquidityTitle')}>
         <line x1="16" y1="176" x2="704" y2="176" className="liq-axis" />
         <line x1="16" y1="102" x2="704" y2="102" className="liq-grid" />
-        <path d={path} className="liq-area" />
         {selected && selectedRight > selectedLeft && (
-          <rect x={selectedLeft} y="18" width={selectedRight - selectedLeft} height="158" className="liq-selected" />
+          <>
+            <rect x={selectedLeft} y="18" width={selectedRight - selectedLeft} height="158" className="liq-selected" />
+            <line x1={selectedLeft} y1="18" x2={selectedLeft} y2="176" className="liq-selected-edge" />
+            <line x1={selectedRight} y1="18" x2={selectedRight} y2="176" className="liq-selected-edge" />
+          </>
         )}
+        <path d={path} className="liq-area" />
         <line x1={x(pool.tick)} y1="18" x2={x(pool.tick)} y2="176" className="liq-current" />
         <text x="16" y="198" textAnchor="start">{price(lower)}</text>
         <text x={x(pool.tick)} y="198" textAnchor="middle">{price(pool.tick)}</text>
@@ -81,10 +85,13 @@ export function LiquidityChart(props: {
 
 async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distribution> {
   const spacing = pool.tickSpacing
-  const compressed = Math.floor(pool.tick / spacing)
-  const centerWord = compressed >> 8
-  const firstWord = Math.max(-32768, centerWord - WORD_RADIUS)
-  const lastWord = Math.min(32767, centerWord + WORD_RADIUS)
+  const delta = tickDeltaForPct(VIEW_PCT)
+  const lower = Math.max(MIN_TICK, pool.tick - delta)
+  const upper = Math.min(MAX_TICK, pool.tick + delta)
+  // Bitmap words are only a transport detail. The chart remains fixed to the
+  // percentage window so large tickSpacing pools do not get absurd axes.
+  const firstWord = Math.floor(lower / spacing) >> 8
+  const lastWord = Math.floor(upper / spacing) >> 8
   const words = Array.from({ length: lastWord - firstWord + 1 }, (_, i) => firstWord + i)
   const abi = pool.protocol === 'univ3' ? uniV3PoolAbi : clPoolAbi
   const bitmaps = (await pc.multicall({
@@ -109,8 +116,8 @@ async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distri
     tickResults[i]?.status === 'success' && tickResults[i].result ? [{ tick, net: tickResults[i].result![1] }] : [],
   )
   return {
-    lower: Math.max(MIN_TICK, firstWord * 256 * spacing),
-    upper: Math.min(MAX_TICK, ((lastWord + 1) * 256 - 1) * spacing),
+    lower,
+    upper,
     ticks,
   }
 }
