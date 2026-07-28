@@ -112,9 +112,9 @@ async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distri
         allowFailure: true,
       })) as { status: string; result?: readonly [bigint, bigint, ...unknown[]] }[])
     : []
-  const ticks = initialized.flatMap((tick, i) =>
-    tickResults[i]?.status === 'success' && tickResults[i].result ? [{ tick, net: tickResults[i].result![1] }] : [],
-  )
+  const failedTick = tickResults.findIndex((result) => result.status !== 'success' || !result.result)
+  if (failedTick >= 0) throw new Error(`tick ${initialized[failedTick]} decode failed`)
+  const ticks = initialized.map((tick, i) => ({ tick, net: tickResults[i].result![1] }))
   return {
     lower,
     upper,
