@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { fmtDur } from '../lib/format'
 import { useEpoch } from '../hooks/useEpoch'
 import { usePools } from '../hooks/usePools'
+import type { ReactNode } from 'react'
 
 export type TabId = 'pools' | 'positions' | 'swap' | 'liquidity'
 const TABS = [
@@ -12,7 +13,7 @@ const TABS = [
   { id: 'liquidity', labelKey: 'hdr.liquidity', key: '4' },
 ] as const
 
-export function Header(props: { tab: TabId; onTab: (t: TabId) => void }) {
+export function Header(props: { tab: TabId; onTab: (t: TabId) => void; chainControl: ReactNode }) {
   const { t } = useTranslation()
   const epoch = useEpoch()
   const pools = usePools()
@@ -44,6 +45,7 @@ export function Header(props: { tab: TabId; onTab: (t: TabId) => void }) {
           </>
         ) : null}
       </span>
+      {props.chainControl}
       <ConnectButton.Custom>
         {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
           if (!mounted) return <button className="btn ghost">…</button>

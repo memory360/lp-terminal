@@ -152,7 +152,7 @@ function Shell() {
 
   return (
     <div className="app">
-      <Header tab={tab} onTab={setTab} />
+      <Header tab={tab} onTab={setTab} chainControl={<ChainControl />} />
       <div className="main">
         {/* RPC health banner */}
         {rpcHealth.status === 'fallback' && (
@@ -181,7 +181,6 @@ function Shell() {
       )}
       <TxLogPanel />
       <div className="footer">
-        <ChainControl />
         <span>{t('app.tagline')}</span>
         <span>{t('app.keys')}</span>
         {isEvmChain(chain) && <RpcControl />}
