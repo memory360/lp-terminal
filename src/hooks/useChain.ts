@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { bsc, getAllChains, getChainById, robinhood, type ChainAdapter } from '../lib/chains'
 import { queryClient } from '../config/query'
+import { fetchJson } from '../lib/fetchJson'
 
 const STORAGE_KEY = 'up33.selectedChain'
 const INDEXER_MANAGER_URL = ''
@@ -30,9 +31,10 @@ function emit() {
 }
 
 async function ensureIndexerRunning(chain: ChainAdapter): Promise<void> {
-  const res = await fetch(`${INDEXER_MANAGER_URL}/api/chains/${chain.id}/start`, { method: 'POST' })
-  if (!res.ok) throw new Error(`indexer start failed: ${res.status}`)
-  const data = (await res.json()) as { running: boolean; ready: boolean }
+  const data = await fetchJson<{ running: boolean; ready: boolean }>(
+    `${INDEXER_MANAGER_URL}/api/chains/${chain.id}/start`,
+    { method: 'POST', signal: AbortSignal.timeout(8_000) },
+  )
   if (!data.running) throw new Error('indexer did not start')
 }
 

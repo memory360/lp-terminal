@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { SolPool } from '../types'
 import { isSolanaChain } from '../lib/chains'
 import { useCurrentChain } from './useChain'
+import { fetchJson } from '../lib/fetchJson'
 
 type SolPoolApiRow = {
   address: string
@@ -47,9 +48,9 @@ function rowToPool(r: SolPoolApiRow): SolPool {
 }
 
 async function fetchSolPools(baseUrl: string): Promise<SolPool[]> {
-  const res = await fetch(`${baseUrl}/api/pools?limit=200`)
-  if (!res.ok) throw new Error(`Solana indexer error: ${res.status}`)
-  const json = (await res.json()) as SolPoolsResponse
+  const json = await fetchJson<SolPoolsResponse>(`${baseUrl}/api/pools?limit=200`, {
+    signal: AbortSignal.timeout(8_000),
+  })
   return json.pools.map(rowToPool)
 }
 
@@ -59,7 +60,7 @@ export function useSolanaPools() {
     queryKey: ['solana-pools', chain.id],
     queryFn: () => fetchSolPools(chain.indexerUrl ?? ''),
     enabled: isSolanaChain(chain),
-    refetchInterval: 15_000,
+    refetchInterval: (query) => (query.state.status === 'error' ? false : 15_000),
     staleTime: 10_000,
   })
 }
