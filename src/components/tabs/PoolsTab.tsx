@@ -351,9 +351,14 @@ function PoolRow(props: {
   const usdPrices = poolTokenUsd(p, t0.decimals, t1.decimals, props.upUsd, props.wethUsd)
   const projectUsd = usdPrices?.[project.address.toLowerCase() === p.token0.toLowerCase() ? 'p0' : 'p1']
 
+  // Highlight pairs that include the chain's canonical stablecoin (e.g. USDG).
+  // Address-based matching prevents fake tokens from spoofing the stable symbol.
+  const stableAddr = chain.anchors.stable.toLowerCase()
+  const hasStable = p.token0.toLowerCase() === stableAddr || p.token1.toLowerCase() === stableAddr
+
   return (
     <>
-      <tr className="rowhover">
+      <tr className={hasStable ? 'rowhover stable-pair' : 'rowhover'}>
         <td>
           <div>
             {props.mine && (

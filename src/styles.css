@@ -385,6 +385,8 @@ table.tbl { width: 100%; border-collapse: collapse; }
 }
 .tbl td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .tbl tr.rowhover:hover td { background: var(--panel2); }
+/* Robinhood stable-pair rows (e.g. XXX/USDG) are tinted light sky blue. */
+.tbl tr.stable-pair > td { color: lightskyblue; }
 .tbl .num { text-align: right; white-space: nowrap; }
 
 /* long catalogs: the table scrolls under a sticky header row */
