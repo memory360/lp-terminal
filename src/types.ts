@@ -65,6 +65,7 @@ export type SolPool = {
   vaultA: string
   vaultB: string
   lpMint: string | null
+  lpDecimals: number
   lpTotalSupply: string | null
   feeBps: number | null
   reserveA: string

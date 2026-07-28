@@ -5,11 +5,11 @@
 import { log } from './config'
 import { allPoolMints, setTokenPrice } from './store'
 
-const JUPITER_PRICE_URL = 'https://price.jup.ag/v6/price'
+const JUPITER_PRICE_URL = 'https://api.jup.ag/price/v3'
 const DEXSCREENER_TOKEN_URL = 'https://api.dexscreener.com/latest/dex/tokens'
 
-// Jupiter returns prices for up to 100 ids per call.
-const JUPITER_BATCH = 100
+// Jupiter Price V3 accepts up to 50 ids per call.
+const JUPITER_BATCH = 50
 
 async function fetchJupiter(mints: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>()
@@ -18,13 +18,14 @@ async function fetchJupiter(mints: string[]): Promise<Map<string, number>> {
     const batch = mints.slice(i, i + JUPITER_BATCH)
     const url = `${JUPITER_PRICE_URL}?ids=${batch.join(',')}`
     try {
-      const r = await fetch(url, { headers: { accept: 'application/json' } })
+      const apiKey = process.env.JUPITER_API_KEY?.trim()
+      const r = await fetch(url, {
+        headers: { accept: 'application/json', ...(apiKey ? { 'x-api-key': apiKey } : {}) },
+      })
       if (!r.ok) throw new Error(`jupiter ${r.status}`)
-      const json = (await r.json()) as {
-        data: Record<string, { id: string; price: number } | undefined>
-      }
-      for (const [mint, info] of Object.entries(json.data)) {
-        if (info?.price) out.set(mint, info.price)
+      const json = (await r.json()) as Record<string, { usdPrice: number } | undefined>
+      for (const [mint, info] of Object.entries(json)) {
+        if (info?.usdPrice) out.set(mint, info.usdPrice)
       }
     } catch (e) {
       log('[sol-prices] Jupiter batch failed:', String(e))

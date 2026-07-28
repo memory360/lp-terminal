@@ -8,6 +8,7 @@ import { useCurrentChain } from './useChain'
 import { useSolanaWallet } from './useSolanaWallet'
 import { useSolanaPools } from './useSolanaPools'
 import { isSolanaChain } from '../lib/chains'
+import { bigintToNumber } from '../lib/format'
 import type { SolPool } from '../types'
 import { rpcUrlForChain } from '../config/env'
 import { customRpc } from '../lib/rpcPref'
@@ -67,11 +68,13 @@ export function useSolanaPositions() {
         if (!pool || !pool.lpTotalSupply) continue
         const lpTotalSupply = BigInt(pool.lpTotalSupply)
         if (lpTotalSupply === 0n) continue
-        const share = Number(lpBalance) / Number(lpTotalSupply)
+        // Compute share as a Number with 9 decimal places of precision.
+        const share = Number((lpBalance * 1_000_000_000n) / lpTotalSupply) / 1_000_000_000
         const reserveA = BigInt(pool.reserveA)
         const reserveB = BigInt(pool.reserveB)
-        const amountA = (Number(reserveA) * share) / 10 ** pool.tokenA.decimals
-        const amountB = (Number(reserveB) * share) / 10 ** pool.tokenB.decimals
+        // Pro-rata share in raw base units, then convert to human-readable.
+        const amountA = bigintToNumber((reserveA * lpBalance) / lpTotalSupply, pool.tokenA.decimals)
+        const amountB = bigintToNumber((reserveB * lpBalance) / lpTotalSupply, pool.tokenB.decimals)
 
         let valueUsd: number | null = null
         // value is already pre-computed as pool.tvlUsd from the indexer.

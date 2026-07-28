@@ -3,10 +3,11 @@
 // (sol_pool_state) to compute pool TVL and writes it back.
 import { log } from './config'
 import { allPoolAddrs, poolRow, poolState, tokenByMint, upsertState } from './store'
+import { formatUnits } from 'viem'
 
 function reserveToUsd(raw: bigint, decimals: number | null, priceUsd: number | null): number | null {
   if (decimals == null || priceUsd == null) return null
-  return (Number(raw) / 10 ** decimals) * priceUsd
+  return Number(formatUnits(raw, decimals)) * priceUsd
 }
 
 export async function computePoolTvls(): Promise<void> {

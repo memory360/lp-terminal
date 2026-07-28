@@ -132,7 +132,7 @@ export function SolanaLiquidityTab() {
             <div className="form-row">
               <span className="lbl">LP Balance</span>
               <span className="mono-sm">
-                {fmtAmount(position.lpBalance, 9)} {pool.tokenA.symbol}/{pool.tokenB.symbol} LP
+                {fmtAmount(position.lpBalance, pool.lpDecimals)} {pool.tokenA.symbol}/{pool.tokenB.symbol} LP
               </span>
             </div>
           )}

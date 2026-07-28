@@ -1,32 +1,25 @@
 // Solana token metadata fetcher.
 // Decimals are read on-chain from SPL Mint accounts. Symbols are fetched from
-// Jupiter's token list (best-effort; unknown mints keep '?' until listed).
+// Jupiter Tokens V2 (best-effort; unknown mints keep '?' until listed).
 import { PublicKey } from '@solana/web3.js'
-import { connection, log, sleep } from './config'
+import { connection, log } from './config'
 import { missingMetaMints, upsertTokenMeta } from './store'
 
-const SPL_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
-const TOKEN_LIST_URL = 'https://token.jup.ag/all'
+const TOKEN_SEARCH_URL = 'https://api.jup.ag/tokens/v2/search'
 
-let symbolCache: Map<string, string> | null = null
-
-async function loadSymbolCache(): Promise<Map<string, string>> {
-  if (symbolCache) return symbolCache
-  symbolCache = new Map<string, string>()
-  try {
-    const r = await fetch(TOKEN_LIST_URL, {
-      headers: { accept: 'application/json' },
+async function fetchSymbols(mints: string[]): Promise<Map<string, string>> {
+  const symbols = new Map<string, string>()
+  const apiKey = process.env.JUPITER_API_KEY?.trim()
+  for (let i = 0; i < mints.length; i += 100) {
+    const query = encodeURIComponent(mints.slice(i, i + 100).join(','))
+    const r = await fetch(`${TOKEN_SEARCH_URL}?query=${query}`, {
+      headers: { accept: 'application/json', ...(apiKey ? { 'x-api-key': apiKey } : {}) },
     })
-    if (!r.ok) throw new Error(`jupiter token list ${r.status}`)
-    const list = (await r.json()) as Array<{ address: string; symbol: string }>
-    for (const t of list) {
-      if (t.address && t.symbol) symbolCache.set(t.address, t.symbol)
-    }
-    log('[sol-tokens] loaded', symbolCache.size, 'symbols from Jupiter list')
-  } catch (e) {
-    log('[sol-tokens] failed to load Jupiter token list:', String(e))
+    if (!r.ok) throw new Error(`jupiter token search ${r.status}`)
+    const list = (await r.json()) as Array<{ id: string; symbol: string }>
+    for (const token of list) if (token.id && token.symbol) symbols.set(token.id, token.symbol)
   }
-  return symbolCache
+  return symbols
 }
 
 /** Read decimals from SPL Mint accounts in batches. */
@@ -52,7 +45,12 @@ export async function syncTokenMetadata(): Promise<void> {
   const mints = missingMetaMints()
   if (!mints.length) return
 
-  const symbols = await loadSymbolCache()
+  let symbols = new Map<string, string>()
+  try {
+    symbols = await fetchSymbols(mints)
+  } catch (e) {
+    log('[sol-tokens] failed to load Jupiter token metadata:', String(e))
+  }
   const decimals = await fetchMintDecimals(mints)
 
   let updated = 0

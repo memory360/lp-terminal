@@ -10,6 +10,7 @@ import { useSolanaWallet } from './useSolanaWallet'
 import { useSolanaPools } from './useSolanaPools'
 import { getRaydium } from '../lib/raydium'
 import { isSolanaChain } from '../lib/chains'
+import { bigintToNumber } from '../lib/format'
 import type { SolPool } from '../types'
 import { rpcUrlForChain } from '../config/env'
 import { customRpc } from '../lib/rpcPref'
@@ -79,10 +80,10 @@ export function useSolanaClmmPositions() {
           false,
         )
 
-        const amountANum = Number(amountA.toString()) / 10 ** pool.tokenA.decimals
-        const amountBNum = Number(amountB.toString()) / 10 ** pool.tokenB.decimals
-        const feeOwedANum = Number(pos.tokenFeesOwedA.toString()) / 10 ** pool.tokenA.decimals
-        const feeOwedBNum = Number(pos.tokenFeesOwedB.toString()) / 10 ** pool.tokenB.decimals
+        const amountANum = bigintToNumber(BigInt(amountA.toString()), pool.tokenA.decimals)
+        const amountBNum = bigintToNumber(BigInt(amountB.toString()), pool.tokenB.decimals)
+        const feeOwedANum = bigintToNumber(BigInt(pos.tokenFeesOwedA.toString()), pool.tokenA.decimals)
+        const feeOwedBNum = bigintToNumber(BigInt(pos.tokenFeesOwedB.toString()), pool.tokenB.decimals)
 
         const priceLower = TickUtil.tickToPrice(pos.tickLower, pool.tokenA.decimals, pool.tokenB.decimals)
         const priceUpper = TickUtil.tickToPrice(pos.tickUpper, pool.tokenA.decimals, pool.tokenB.decimals)

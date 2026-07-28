@@ -3,7 +3,7 @@
 // sol_pool_state. Prices/TVL are intentionally left for a later phase.
 import { PublicKey } from '@solana/web3.js'
 import { connection, log, TUNE } from './config'
-import { allPoolAddrs, poolRow, upsertState } from './store'
+import { allPoolAddrs, poolRow, setPoolLpDecimals, upsertState } from './store'
 
 // SPL Token Account layout: amount is a u64 at offset 64.
 const TOKEN_ACCOUNT_AMOUNT_OFFSET = 64
@@ -44,22 +44,37 @@ export async function refreshPoolState(): Promise<void> {
       for (let j = 0; j < batch.length; j++) {
         const info = infos[j]
         const key = batch[j].toBase58()
-        if (!info?.data) {
-          target.set(key, 0n)
-          continue
-        }
+        // Skip null accounts — they may be transient RPC failures rather than
+        // truly closed accounts. Writing 0 would pollute TVL; preserving the
+        // previous value is safer until a confirmed read succeeds.
+        if (!info?.data) continue
         target.set(key, reader(Buffer.from(info.data)) ?? 0n)
       }
     }
   }
 
   await fetchBatch(vaultPubkeys, readTokenAmount, balances)
-  await fetchBatch(lpMintPubkeys, readMintSupply, supplies)
+  // Read supply and decimals from the same SPL Mint response.
+  for (let i = 0; i < lpMintPubkeys.length; i += TUNE.batch) {
+    const batch = lpMintPubkeys.slice(i, i + TUNE.batch)
+    const infos = await connection.getMultipleAccountsInfo(batch, 'confirmed')
+    for (let j = 0; j < batch.length; j++) {
+      const data = infos[j]?.data
+      if (!data) continue
+      const mint = batch[j].toBase58()
+      const supply = readMintSupply(Buffer.from(data))
+      if (supply !== null) supplies.set(mint, supply)
+      if (data.length >= 45) setPoolLpDecimals(mint, data.readUInt8(44))
+    }
+  }
 
   let updated = 0
   for (const p of pools) {
-    const reserveA = balances.get(p.vaultA) ?? 0n
-    const reserveB = balances.get(p.vaultB) ?? 0n
+    const reserveA = balances.get(p.vaultA)
+    const reserveB = balances.get(p.vaultB)
+    // A partial RPC response is not a zero balance. Preserve the complete
+    // previous snapshot until both vaults can be read successfully.
+    if (reserveA === undefined || reserveB === undefined) continue
     const lpTotalSupply = p.lpMint ? (supplies.get(p.lpMint) ?? null) : null
     upsertState(p.addr, { reserveA, reserveB, lpTotalSupply: lpTotalSupply ?? undefined })
     updated++

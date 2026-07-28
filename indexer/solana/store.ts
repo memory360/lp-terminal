@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS sol_pools (
   vault_a       TEXT,                 -- base58 token account holding reserve A
   vault_b       TEXT,                 -- base58 token account holding reserve B
   lp_mint       TEXT,                 -- base58 LP mint (AMM V4 only)
+  lp_decimals   INTEGER,
   fee_bps       INTEGER,              -- swap fee in bps where known
   added_ts      INTEGER NOT NULL
 );
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 // Migration: add lp_mint if upgrading an existing database.
 const poolCols = db.prepare('PRAGMA table_info(sol_pools)').all() as { name: string }[]
 if (!poolCols.some((c) => c.name === 'lp_mint')) db.exec('ALTER TABLE sol_pools ADD COLUMN lp_mint TEXT')
+if (!poolCols.some((c) => c.name === 'lp_decimals')) db.exec('ALTER TABLE sol_pools ADD COLUMN lp_decimals INTEGER')
 
 // ---- kv ----
 const kvGetQ = db.prepare('SELECT v FROM kv WHERE k = ?')
@@ -79,13 +81,14 @@ export type SolPoolInsert = {
   vaultA?: string
   vaultB?: string
   lpMint?: string
+  lpDecimals?: number
   feeBps?: number
 }
 
 const insPoolQ = db.prepare(`
   INSERT OR IGNORE INTO sol_pools
-    (address, program, pool_type, token_a, token_b, decimals_a, decimals_b, symbol_a, symbol_b, vault_a, vault_b, lp_mint, fee_bps, added_ts)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (address, program, pool_type, token_a, token_b, decimals_a, decimals_b, symbol_a, symbol_b, vault_a, vault_b, lp_mint, lp_decimals, fee_bps, added_ts)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
 export function insertPool(p: SolPoolInsert): boolean {
   const r = insPoolQ.run(
@@ -101,6 +104,7 @@ export function insertPool(p: SolPoolInsert): boolean {
     p.vaultA ?? null,
     p.vaultB ?? null,
     p.lpMint ?? null,
+    p.lpDecimals ?? null,
     p.feeBps ?? null,
     now(),
   )
@@ -120,6 +124,7 @@ export type SolPoolRow = {
   vault_a: string | null
   vault_b: string | null
   lp_mint: string | null
+  lp_decimals: number | null
   fee_bps: number | null
 }
 
@@ -149,6 +154,7 @@ export type SolPoolListRow = {
   vault_a: string | null
   vault_b: string | null
   lp_mint: string | null
+  lp_decimals: number | null
   fee_bps: number | null
   reserve_a: string
   reserve_b: string
@@ -165,7 +171,7 @@ const poolListQ = db.prepare(`
     COALESCE(ta.symbol, p.symbol_a, '?') AS symbol_a,
     COALESCE(tb.symbol, p.symbol_b, '?') AS symbol_b,
     p.vault_a, p.vault_b,
-    p.lp_mint,
+    p.lp_mint, p.lp_decimals,
     p.fee_bps,
     COALESCE(s.reserve_a, '0') AS reserve_a,
     COALESCE(s.reserve_b, '0') AS reserve_b,
@@ -184,6 +190,9 @@ export function listPools(args: { limit: number; offset: number; mint?: string }
   const mint = args.mint ?? null
   return poolListQ.all(mint, mint, mint, args.limit, args.offset) as SolPoolListRow[]
 }
+
+const setLpDecimalsQ = db.prepare('UPDATE sol_pools SET lp_decimals = ? WHERE lp_mint = ?')
+export const setPoolLpDecimals = (lpMint: string, decimals: number) => void setLpDecimalsQ.run(decimals, lpMint)
 
 // ---- state ----
 export type SolPoolStateRow = {
@@ -242,7 +251,9 @@ export const upsertState = (
 // ---- tokens ----
 const insTokenQ = db.prepare(`
   INSERT INTO sol_tokens (mint, symbol, decimals) VALUES (?, ?, ?)
-  ON CONFLICT(mint) DO UPDATE SET symbol = excluded.symbol, decimals = excluded.decimals`)
+  ON CONFLICT(mint) DO UPDATE SET
+    symbol = CASE WHEN excluded.symbol = '?' THEN sol_tokens.symbol ELSE excluded.symbol END,
+    decimals = excluded.decimals`)
 
 export const upsertTokenMeta = (mint: string, symbol: string, decimals: number) =>
   void insTokenQ.run(mint, symbol, decimals)
@@ -282,7 +293,8 @@ export const missingMetaMints = (): string[] =>
       .prepare(
         `SELECT DISTINCT u.mint FROM (
            SELECT token_a AS mint FROM sol_pools UNION SELECT token_b FROM sol_pools
-         ) u LEFT JOIN sol_tokens t ON t.mint = u.mint WHERE t.mint IS NULL`,
+         ) u LEFT JOIN sol_tokens t ON t.mint = u.mint
+         WHERE t.mint IS NULL OR t.decimals IS NULL OR t.symbol = '?'`,
       )
       .all() as { mint: string }[]
   ).map((r) => r.mint)

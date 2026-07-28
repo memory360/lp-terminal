@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     envDir,
-    envPrefix: ['VITE_', 'RPC', 'KYBERSWAP_', 'JUPITER_'],
+    envPrefix: ['VITE_', 'RPC', 'KYBERSWAP_', 'JUPITER_API_BASE'],
     server: { port: 5173, proxy },
     preview: { port: 4173, proxy },
     build: {

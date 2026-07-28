@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WagmiProvider, useAccount, useSwitchChain } from 'wagmi'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -104,7 +104,7 @@ function Shell() {
   const rpcHealth = useRpcHealth()
   const chain = useCurrentChain()
   const indexerSwitching = useIndexerSwitching()
-  const [lastChainId, setLastChainId] = useState(chain.id)
+  const lastChainId = useRef(chain.id)
   const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
@@ -112,13 +112,13 @@ function Shell() {
   }, [])
 
   useEffect(() => {
-    if (chain.id !== lastChainId) {
+    if (chain.id !== lastChainId.current) {
+      lastChainId.current = chain.id
       setSwitching(true)
-      setLastChainId(chain.id)
       const h = setTimeout(() => setSwitching(false), 450)
       return () => clearTimeout(h)
     }
-  }, [chain.id, lastChainId])
+  }, [chain.id])
 
   useEffect(() => {
     const onHash = () => {

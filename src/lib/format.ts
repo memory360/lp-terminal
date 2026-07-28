@@ -1,5 +1,12 @@
 import { formatUnits } from 'viem'
 
+/** Safely convert a BigInt raw amount to a display Number without precision
+ *  loss for values within Number.MAX_SAFE_INTEGER after decimal scaling.
+ *  Divides using BigInt first so the whole part never overflows Number. */
+export function bigintToNumber(raw: bigint, decimals: number): number {
+  return Number(formatUnits(raw, decimals))
+}
+
 /** significant-digit number formatting with thousands separators */
 export function fmtNum(x: number, sig = 5): string {
   if (!Number.isFinite(x)) return '—'

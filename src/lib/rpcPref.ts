@@ -116,17 +116,6 @@ export function getCachedRpcHealth(chainId: number, url: string): RpcHealth | nu
   }
 }
 
-// Check if a URL is likely blocked (rate limited, quota exceeded) based on error
-export function isBlockedError(err: string): boolean {
-  const blockedPatterns = [
-    '429', 'rate limit', 'quota', 'limit exceeded', 'too many requests',
-    'exceeded', 'insufficient', 'service unavailable', '503', '500',
-    'invalid api key', 'authentication', 'permission', 'access denied',
-    'project id', 'api key', 'invalid key', 'key expired', 'rejected',
-  ]
-  return blockedPatterns.some(p => err.toLowerCase().includes(p))
-}
-
 // Clear cached RPC health status for all chains — used by resetRpcHealth
 export function clearAllRpcHealth(chainIds: number[]): void {
   try {

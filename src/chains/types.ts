@@ -96,7 +96,7 @@ export interface SolanaChainAdapter extends ChainAdapterBase {
     /** Jupiter aggregator program (for swap routing). */
     jupiter?: SolanaProgramId
   }
-  /** Jupiter V6 API route: 'https://quote-api.jup.ag/v6' or a same-origin proxy. */
+  /** Jupiter Swap API base URL or a same-origin proxy. */
   jupiterBase: string
 }
 

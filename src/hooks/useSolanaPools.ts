@@ -17,6 +17,7 @@ type SolPoolApiRow = {
   vault_a: string | null
   vault_b: string | null
   lp_mint: string | null
+  lp_decimals: number | null
   lp_total_supply: string | null
   fee_bps: number | null
   reserve_a: string
@@ -38,6 +39,7 @@ function rowToPool(r: SolPoolApiRow): SolPool {
     vaultA: r.vault_a ?? '',
     vaultB: r.vault_b ?? '',
     lpMint: r.lp_mint,
+    lpDecimals: r.lp_decimals ?? r.decimals_a ?? 0,
     lpTotalSupply: r.lp_total_supply,
     feeBps: r.fee_bps,
     reserveA: r.reserve_a,

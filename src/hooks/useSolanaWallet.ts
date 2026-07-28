@@ -109,7 +109,9 @@ function useSolanaWalletState(): SolanaWallet {
 
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 500) // detect wallets injected after page load
+    // Detect wallets injected after page load. 2s is infrequent enough to
+    // avoid wasted renders while still catching late injections.
+    const interval = setInterval(refresh, 2_000)
     return () => clearInterval(interval)
   }, [refresh])
 

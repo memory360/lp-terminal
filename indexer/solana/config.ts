@@ -15,13 +15,8 @@ export const TUNE = {
   catalogMs: 60_000,
   /** How often to refresh pool state (vault balances, price). */
   stateMs: 15_000,
-  /** Page size for getProgramAccounts — Alchemy/Helius tolerate 100k+ but
-   *  smaller pages reduce single-request failure blast radius. */
-  gpaPageSize: 4_096,
   /** Concurrency limit for getMultipleAccounts batches. */
   batch: 100,
-  /** Max retry attempts for RPC calls. */
-  retries: 3,
 }
 
 /** Solana RPC URL: env var wins, then .env, then public fallback. */

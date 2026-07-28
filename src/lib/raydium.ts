@@ -39,7 +39,7 @@ export async function addRaydiumLiquidity(args: {
   fixedSide: 'a' | 'b'
   slippage: number // 0.01 = 1%
   owner: string
-    signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>
+  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>
 }): Promise<LiquidityResult> {
   const owner = new PublicKey(args.owner)
   if (args.pool.poolType !== 'amm' || args.pool.program !== 'raydium-amm-v4') throw new Error('Only Raydium AMM V4 pools are supported')
@@ -82,7 +82,7 @@ export async function removeRaydiumLiquidity(args: {
   lpAmount: bigint
   slippage: number
   owner: string
-    signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>
+  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>
 }): Promise<LiquidityResult> {
   const owner = new PublicKey(args.owner)
   if (args.pool.poolType !== 'amm' || args.pool.program !== 'raydium-amm-v4' || !args.pool.lpMint) throw new Error('Only Raydium AMM V4 pools are supported')
