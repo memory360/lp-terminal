@@ -49,6 +49,7 @@ import { Flash } from '../Flash'
 import { ProtoBadge } from '../ProtoBadge'
 import { RangeBar } from '../RangeBar'
 import { ZapPanel } from '../ZapPanel'
+import { LiquidityChart } from '../LiquidityChart'
 import { AmountRow, Btn, NumInput } from '../ui'
 
 const SLIP_BPS = 100
@@ -821,6 +822,7 @@ export function AddCl({
   const [a0, setA0] = useState('')
   const [a1, setA1] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showLiquidity, setShowLiquidity] = useState(false)
   const bal = useBalances(user, [pool.token0, pool.token1])
 
   const ticks = useMemo(() => {
@@ -988,7 +990,7 @@ export function AddCl({
   }
 
   return (
-    <div className="expander">
+    <div className={`expander ${showLiquidity ? 'cl-visual' : ''}`}>
       <div className="form-row">
         <span className="lbl">{t('add.range')}</span>
         {PRESETS.map((p) => (
@@ -1024,6 +1026,9 @@ export function AddCl({
         </button>
         <button className={`chip ${mode === 'ticks' ? 'on' : ''}`} onClick={() => setMode('ticks')} title={t('add.ticksTip')}>
           {t('add.ticks')}
+        </button>
+        <button className={`chip ${showLiquidity ? 'on' : ''}`} onClick={() => setShowLiquidity((v) => !v)}>
+          {showLiquidity ? t('add.hideLiquidity') : t('add.showLiquidity')}
         </button>
         {(mode === 'pct' || mode === 'above' || mode === 'below') && (
           <>
@@ -1067,6 +1072,7 @@ export function AddCl({
           sym1={t1.symbol}
         />
       )}
+      {showLiquidity && <LiquidityChart pool={pool} t0={t0} t1={t1} selected={ticks} />}
       <FundSwitch fund={fund} onFund={setFund} />
       {fund === 'zap' ? (
         ticks ? (
