@@ -9,6 +9,26 @@ function chainPublicRpc(chainId: number): string {
   return supportedChains.find((chain) => chain.id === chainId)!.rpcUrls.default.http[0]
 }
 
+/** Re-check the shared health circuit on every request so a probe performed
+ * after wagmi initialization can immediately stop traffic to a dead RPC. */
+function healthAwareRpc(chainId: number, rpc: string, publicRpc: string): Transport {
+  const primary = http(rpc, { batch: true })
+  const publicNode = http(publicRpc, { batch: true })
+  return (config) => {
+    const primaryValue = primary(config)
+    const publicValue = publicNode(config)
+    return {
+      ...primaryValue,
+      key: `health-aware-${chainId}`,
+      name: `Health-aware RPC ${chainId}`,
+      request: (args) =>
+        getCachedRpcHealth(chainId, rpc)?.ok === false
+          ? publicValue.request(args)
+          : primaryValue.request(args),
+    }
+  }
+}
+
 /**
  * Build transport list with automatic fallback for a specific chain.
  * - user-set custom RPC (footer control) wins for every chain
@@ -22,17 +42,11 @@ function buildTransport(chainId: number): Transport {
   const envRpc = rpcUrlForChain(adapter.key)
 
   if (userRpc) {
-    const health = getCachedRpcHealth(chainId, userRpc)
-    if (health && !health.ok) return http(publicRpc, { batch: true })
-    return fallback([http(userRpc, { batch: true }), http(publicRpc, { batch: true })])
+    return fallback([healthAwareRpc(chainId, userRpc, publicRpc), http(publicRpc, { batch: true })])
   }
 
   if (envRpc) {
-    const health = getCachedRpcHealth(chainId, envRpc)
-    if (health && !health.ok) {
-      return http(publicRpc, { batch: true })
-    }
-    return fallback([http(envRpc, { batch: true }), http(publicRpc, { batch: true })])
+    return fallback([healthAwareRpc(chainId, envRpc, publicRpc), http(publicRpc, { batch: true })])
   }
 
   return import.meta.env.PROD && adapter.rpcProxyUrl

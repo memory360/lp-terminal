@@ -167,11 +167,11 @@ function Shell() {
             <Btn onClick={() => switchChain({ chainId: chain.id })}>{t('app.switch')}</Btn>
           </div>
         )}
-        {tab === 'pools' &&
+        {rpcHealth.status !== 'checking' && tab === 'pools' &&
           (location.hash === '#lab' ? <LabTab /> : isSolanaChain(chain) ? <SolanaPoolsTab /> : <PoolsTab />)}
-        {tab === 'positions' && (isEvmChain(chain) ? <PositionsTab /> : <SolanaPositionsTab />)}
-        {tab === 'swap' && (isEvmChain(chain) ? <SwapTab /> : <SolanaSwapTab />)}
-        {tab === 'liquidity' && (isSolanaChain(chain) ? <SolanaLiquidityTab /> : <div className="dim">EVM liquidity management coming soon.</div>)}
+        {rpcHealth.status !== 'checking' && tab === 'positions' && (isEvmChain(chain) ? <PositionsTab /> : <SolanaPositionsTab />)}
+        {rpcHealth.status !== 'checking' && tab === 'swap' && (isEvmChain(chain) ? <SwapTab /> : <SolanaSwapTab />)}
+        {rpcHealth.status !== 'checking' && tab === 'liquidity' && (isSolanaChain(chain) ? <SolanaLiquidityTab /> : <div className="dim">EVM liquidity management coming soon.</div>)}
       </div>
       {(switching || indexerSwitching) && (
         <div className="chain-switch-overlay">

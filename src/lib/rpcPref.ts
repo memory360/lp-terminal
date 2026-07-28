@@ -4,7 +4,7 @@
 
 const KEY = 'up33.rpcUrl.v2'
 const HEALTH_KEY = 'up33.rpcHealth.v2'
-const HEALTH_TTL = 5 * 60 * 1000 // 5 minutes cache
+const HEALTH_TTL = 5 * 60 * 1000 // successful probes may be refreshed periodically
 
 export function customRpc(chainId: number): string {
   try {
@@ -107,7 +107,9 @@ export function getCachedRpcHealth(chainId: number, url: string): RpcHealth | nu
     if (!raw) return null
     const health = JSON.parse(raw) as RpcHealth
     if (health.chainId !== chainId || health.url !== url) return null
-    if (Date.now() - health.timestamp > HEALTH_TTL) return null
+    // Failed RPCs stay circuit-broken until the user clicks Retry. Automatically
+    // expiring this record causes quota-exhausted endpoints to be hammered again.
+    if (health.ok && Date.now() - health.timestamp > HEALTH_TTL) return null
     return health
   } catch {
     return null

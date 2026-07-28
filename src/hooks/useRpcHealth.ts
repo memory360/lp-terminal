@@ -4,7 +4,6 @@ import {
   clearAllRpcHealth,
   customRpc,
   getCachedRpcHealth,
-  isBlockedError,
   probeRpc,
   probeSolanaRpc,
   saveRpcHealth,
@@ -80,8 +79,10 @@ export function useRpcHealth(): RpcHealthState {
       
       if (!mounted) return
 
-      // If unhealthy and likely blocked, save to cache to skip on next load
-      if (!result.ok && isBlockedError(result.err)) {
+      // Any failed startup probe opens the circuit. Browser CORS often hides
+      // the underlying 429, so requiring a recognizable error would keep
+      // hammering the same endpoint. The user can explicitly retry the RPC.
+      if (!result.ok) {
         saveRpcHealth({
           chainId,
           url: targetRpc,
