@@ -252,6 +252,13 @@ export function PositionsTab() {
         />
         <Stat
           k={t('pos.pendingUp')}
+          aside={
+            upUsd !== undefined
+              ? t('pos.upUnitPrice', {
+                  usd: `$${upUsd.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })}`,
+                })
+              : undefined
+          }
           v={
             <Flash v={Number(pendingUp)} arrow>
               <span className={pendingUp > 0n ? 'green' : ''}>

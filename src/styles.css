@@ -424,7 +424,9 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
 
 .stat { border: 1px solid var(--line); padding: 8px 10px; background: var(--panel2); }
+.stat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .stat .k { color: var(--dim); font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-aside { color: var(--dim); font-size: 0.8em; white-space: nowrap; }
 .stat .v { font-size: 1.25em; margin-top: 2px; }
 .stat .sub { color: var(--dim); font-size: 0.85em; margin-top: 2px; }
 

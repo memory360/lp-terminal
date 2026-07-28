@@ -265,6 +265,7 @@ export const zh: typeof en = {
     pendingUp: '待领 UP',
     upPriceError: '价格获取失败',
     upPriceRetry: '↻ 重试价格',
+    upUnitPrice: '1 UP ≈ {{usd}}',
     upPerDay: '+{{n}} UP/天',
     upPerDayUsd: '(≈{{usd}}/天)',
     claimAll: '全部领取（{{n}} 笔）',

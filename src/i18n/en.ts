@@ -265,6 +265,7 @@ export const en = {
     pendingUp: 'PENDING UP',
     upPriceError: 'price failed',
     upPriceRetry: '↻ retry price',
+    upUnitPrice: '1 UP ≈ {{usd}}',
     upPerDay: '+{{n}} UP/day',
     upPerDayUsd: '(≈{{usd}}/day)',
     claimAll: 'CLAIM ALL ({{n}} tx)',

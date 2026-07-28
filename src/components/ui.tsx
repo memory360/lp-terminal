@@ -26,10 +26,13 @@ export function Badge(props: { tone?: 'green' | 'amber' | 'red' | 'cyan' | 'dim'
   return <span className={`badge ${props.tone ?? ''}`}>{props.children}</span>
 }
 
-export function Stat(props: { k: string; v: ReactNode; sub?: ReactNode }) {
+export function Stat(props: { k: string; v: ReactNode; sub?: ReactNode; aside?: ReactNode }) {
   return (
     <div className="stat">
-      <div className="k">{props.k}</div>
+      <div className="stat-head">
+        <div className="k">{props.k}</div>
+        {props.aside !== undefined && <div className="stat-aside">{props.aside}</div>}
+      </div>
       <div className="v">{props.v}</div>
       {props.sub !== undefined && <div className="sub">{props.sub}</div>}
     </div>
