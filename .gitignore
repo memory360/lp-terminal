@@ -10,3 +10,6 @@ indexer-dist
 tsconfig.tsbuildinfo
 *.log
 .vite
+indexer/solana/data/*.db
+indexer/solana/data/*.db-shm
+indexer/solana/data/*.db-wal
