@@ -19,7 +19,7 @@ import {
 import { fmtApr } from '../../lib/apr'
 import { fmtAmount, fmtNum, fmtUsd, shortAddr } from '../../lib/format'
 import { limitFillFrac, limitSideFor, limitTagOf, untagLimit } from '../../lib/limit'
-import { clPosMetrics, v2PosMetrics, type Earning } from '../../lib/posmetrics'
+import { clPosMetrics, v2PosMetrics, type Earning, type StakeComparison } from '../../lib/posmetrics'
 import type { PoolStat } from '../../lib/poolstats'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, offerSwapClaimedUp, step } from '../../lib/tx'
 import { txlog } from '../../lib/txlog'
@@ -601,6 +601,11 @@ export function ClCard({
           🦅
         </a>
         {pos.staked ? <Badge tone="green">{t('pos.staked')}</Badge> : <Badge tone="amber">{t('pos.wallet')}</Badge>}
+        {!limitTag && m.stakeComparison && (
+          <Badge tone={m.stakeComparison.verdict === 'stake' ? 'green' : m.stakeComparison.verdict === 'wallet' ? 'red' : 'amber'}>
+            {t(`pos.stakeAdvice.${m.stakeComparison.verdict}`)}
+          </Badge>
+        )}
         {limitTag && <Badge tone="cyan">{t('pos.limitBadge', { sell: limitTag.sellSym, buy: limitTag.buySym })}</Badge>}
         <div className="card-actions">
           {pos.staked ? (
@@ -727,6 +732,7 @@ export function ClCard({
             <span className="k">{t('pos.earning')}</span>
             <EarnLine e={m.earning} />
           </span>
+          {m.stakeComparison && <StakeAdvice comparison={m.stakeComparison} />}
         </div>
       )}
 
@@ -1216,13 +1222,26 @@ export function V2Card({
 // ---------------- helpers ----------------
 
 /** one-line "what is this position earning right now" renderer */
+function StakeAdvice({ comparison }: { comparison: StakeComparison }) {
+  const { t } = useTranslation()
+  const tone = comparison.verdict === 'stake' ? 'green' : comparison.verdict === 'wallet' ? 'red' : 'amber'
+  return (
+    <span className={tone} title={t('pos.stakeAdvice.basis')}>
+      {t('pos.stakeAdvice.detail', {
+        wallet: fmtUsd(comparison.walletUsdHourPer1k),
+        stake: fmtUsd(comparison.stakeUsdHourPer1k),
+      })}
+    </span>
+  )
+}
+
 function EarnLine({ e, v2 }: { e: Earning; v2?: boolean }) {
   const { t } = useTranslation()
   const share = (s: number) => (s < 0.01 ? '<0.01%' : s.toFixed(2) + '%')
   switch (e.kind) {
     case 'emissions':
       return (
-        <span className="green">
+        <span className="green" title={t('pos.earnEmitLiveTip')}>
           {t('pos.earnEmit', { n: fmtNum(e.upPerDay, 3) })}
           {e.usdPerDay !== null ? ` ${t('pos.earnUsdDay', { usd: fmtUsd(e.usdPerDay) })}` : ''}
           {e.aprPct !== null ? ` · ${t('pos.earnApr', { apr: fmtApr(e.aprPct) })}` : ''} ·{' '}

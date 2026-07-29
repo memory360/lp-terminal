@@ -437,7 +437,7 @@ function PoolRow(props: {
         <td className="num" title="unstaked LP net fee yield (staked LPs earn 0 fees)">
           {feeApr != null ? fmtApr(feeApr) : <span className="dim">—</span>}
         </td>
-        <td className="num" title="estimate: trailing 1H volume, $1000 LP with 10% range">
+        <td className="num" title={t('pools.rangeEarningsTip')}>
           {rangeEarnings != null && rangeEarnings > 0 ? (
             <span className={rangeEarnings > 200 ? 'red' : rangeEarnings > 100 ? 'range-warm' : 'amber'}>
               ${rangeEarnings.toFixed(2)}

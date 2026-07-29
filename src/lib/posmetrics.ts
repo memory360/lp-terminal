@@ -27,6 +27,13 @@ export type ClMetrics = {
   feesUsd: number | null
   inRange: boolean
   earning: Earning
+  stakeComparison: StakeComparison | null
+}
+
+export type StakeComparison = {
+  stakeUsdHourPer1k: number
+  walletUsdHourPer1k: number
+  verdict: 'stake' | 'wallet' | 'similar'
 }
 
 const DAY = 86_400
@@ -34,6 +41,16 @@ const YEAR_DAYS = 365
 
 const emitting = (p: { rewardRate: bigint; periodFinish: bigint }) =>
   p.rewardRate > 0n && p.periodFinish > BigInt(nowSec())
+
+export function compareStakeYield(valueUsd: number | null, stakeUsdPerDay: number | null, walletUsdPerDay: number | null): StakeComparison | null {
+  if (!(valueUsd && valueUsd > 0) || stakeUsdPerDay === null || walletUsdPerDay === null) return null
+  const stakeUsdHourPer1k = (stakeUsdPerDay / valueUsd) * 1000 / 24
+  const walletUsdHourPer1k = (walletUsdPerDay / valueUsd) * 1000 / 24
+  const verdict = stakeUsdHourPer1k > walletUsdHourPer1k * 1.1
+    ? 'stake'
+    : walletUsdHourPer1k > stakeUsdHourPer1k * 1.1 ? 'wallet' : 'similar'
+  return { stakeUsdHourPer1k, walletUsdHourPer1k, verdict }
+}
 
 export function clPosMetrics(args: {
   pos: ClPosition
@@ -54,6 +71,16 @@ export function clPosMetrics(args: {
   const valueUsd = px ? h(args.amount0, dec0) * px.p0 + h(args.amount1, dec1) * px.p1 : null
   const feesUsd = px ? h(pos.fees0, dec0) * px.p0 + h(pos.fees1, dec1) * px.p1 : null
   const inRange = args.tick >= pos.tickLower && args.tick < pos.tickUpper
+  const activeShare = Number(pool.liquidity) > 0 ? Number(pos.liquidity) / Number(pool.liquidity) : 0
+  const walletUsdPerDay = inRange && args.stat?.vol24hUsd != null
+    ? args.stat.vol24hUsd * (pool.feePpm / 1e6) * (1 - pool.unstakedFeePpm / 1e6) * activeShare
+    : null
+  const projectedStakedLiquidity = pool.stakedLiquidity + (pos.staked ? 0n : pos.liquidity)
+  const stakeShare = Number(projectedStakedLiquidity) > 0 ? Number(pos.liquidity) / Number(projectedStakedLiquidity) : 0
+  const stakeUsdPerDay = inRange && emitting(pool) && args.upUsd
+    ? (Number(pool.rewardRate) / 1e18) * DAY * stakeShare * args.upUsd
+    : null
+  const stakeComparison = compareStakeYield(valueUsd, stakeUsdPerDay, walletUsdPerDay)
 
   let earning: Earning
   if (pos.liquidity === 0n) {
@@ -75,14 +102,12 @@ export function clPosMetrics(args: {
   } else if (args.stat?.vol24hUsd == null || valueUsd === null || valueUsd <= 0) {
     earning = { kind: 'fees-unknown' }
   } else {
-    const denom = Number(pool.liquidity)
-    const share = denom > 0 ? Number(pos.liquidity) / denom : 0
-    const keep = 1 - pool.unstakedFeePpm / 1e6
-    const usdPerDay = args.stat.vol24hUsd * (pool.feePpm / 1e6) * keep * share
+    const share = activeShare
+    const usdPerDay = walletUsdPerDay!
     earning = { kind: 'fees', aprPct: ((usdPerDay * YEAR_DAYS) / valueUsd) * 100, usdPerDay, sharePct: share * 100 }
   }
 
-  return { valueUsd, feesUsd, inRange, earning }
+  return { valueUsd, feesUsd, inRange, earning, stakeComparison }
 }
 
 /** USD prices of a v2 pool's tokens: anchor + reserve ratio, TVL/2 backstop */
