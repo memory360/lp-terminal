@@ -17,11 +17,12 @@ const PORT = Number(process.env.INDEXER_MANAGER_PORT || 8790)
 const DEFAULT_CHAIN_KEY = (process.env.CHAIN ?? 'robinhood').toLowerCase().trim()
 const DEFAULT_CHAIN = getChainByKey(DEFAULT_CHAIN_KEY) ?? robinhood
 
-// Fixed per-chain indexer ports. Must stay in sync with src/lib/chains.ts.
+// Internal-only ports; override them when the host already uses a default.
+// The browser and nginx only talk to the manager port above.
 const CHAIN_PORTS: Record<number, number> = {
-  4663: 8787, // robinhood
-  56: 8788,   // bsc
-  101: 8789,  // solana
+  4663: Number(process.env.INDEXER_PORT_ROBINHOOD || 18787),
+  56: Number(process.env.INDEXER_PORT_BSC || 18788),
+  101: Number(process.env.INDEXER_PORT_SOLANA || 18789),
 }
 
 interface ManagedProcess {
