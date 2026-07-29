@@ -1,8 +1,7 @@
 // On-demand multi-chain indexer manager.
 // Keeps zero or one indexer process per chain. Frontends ask this manager to
-// start a chain before switching to it; the manager proxies nothing — it only
-// launches/stops indexers and reports readiness. The frontend still talks to
-// each indexer on its fixed port (configured in src/lib/chains.ts).
+// start a chain before switching to it; the manager launches/stops indexers,
+// reports readiness, and proxies their API on one public origin.
 //
 // Run: INDEXER_MANAGER_PORT=8790 pnpm indexer:manager
 // API:
@@ -79,7 +78,8 @@ async function startChain(chainId: number): Promise<{ running: boolean; ready: b
 
   log(chain.key, `starting indexer on port ${port}`)
   const entry = isEvmChain(chain) ? 'indexer/main.ts' : `indexer/${chain.key}/main.ts`
-  const proc = spawn('tsx', [entry], {
+  // Do not depend on PM2/systemd preserving npm's node_modules/.bin PATH.
+  const proc = spawn(process.execPath, ['--import', 'tsx', entry], {
     cwd: process.cwd(),
     env: {
       ...process.env,
