@@ -15,6 +15,7 @@ export const en = {
     tokenSearch: 'symbol or address…',
   },
   hdr: {
+    noSolanaWallet: 'NO SOLANA WALLET',
     pools: 'POOLS',
     positions: 'POSITIONS',
     swap: 'SWAP',

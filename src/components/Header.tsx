@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { fmtDur } from '../lib/format'
 import { useEpoch } from '../hooks/useEpoch'
 import { usePools } from '../hooks/usePools'
+import { useCurrentChain } from '../hooks/useChain'
+import { useSolanaWallet } from '../hooks/useSolanaWallet'
+import { isSolanaChain } from '../lib/chains'
+import { shortAddr } from '../lib/format'
+import { txlog } from '../lib/txlog'
 import type { ReactNode } from 'react'
 
 export type TabId = 'pools' | 'positions' | 'swap' | 'liquidity'
@@ -18,6 +23,7 @@ export function Header(props: { tab: TabId; onTab: (t: TabId) => void; chainCont
   const epoch = useEpoch()
   const pools = usePools()
   const p = pools.data?.protocol
+  const chain = useCurrentChain()
 
   return (
     <div className="hdr">
@@ -46,7 +52,51 @@ export function Header(props: { tab: TabId; onTab: (t: TabId) => void; chainCont
         ) : null}
       </span>
       {props.chainControl}
-      <ConnectButton.Custom>
+      {isSolanaChain(chain) ? <SolanaConnect /> : <EvmConnect />}
+    </div>
+  )
+}
+
+function SolanaConnect() {
+  const { t } = useTranslation()
+  const wallet = useSolanaWallet()
+  const connect = (name: Parameters<typeof wallet.connect>[0]) =>
+    wallet.connect(name).catch((error) => txlog.push('err', String(error)))
+  if (wallet.connected)
+    return (
+      <button className="btn ghost" onClick={() => void wallet.disconnect()} title={wallet.publicKey ?? undefined}>
+        [{shortAddr(wallet.publicKey!)}]
+      </button>
+    )
+
+  const providers = wallet.providers.filter((provider) => provider.detected)
+  if (providers.length === 0) return <button className="btn" disabled>{t('hdr.noSolanaWallet')}</button>
+  if (providers.length === 1)
+    return (
+      <button className="btn" disabled={wallet.connecting} onClick={() => void connect(providers[0].name)}>
+        {wallet.connecting ? '…' : t('hdr.connect')}
+      </button>
+    )
+
+  return (
+    <select
+      className="btn"
+      value=""
+      disabled={wallet.connecting}
+      onChange={(event) => {
+        if (event.target.value) void connect(event.target.value as typeof providers[number]['name'])
+      }}
+    >
+      <option value="">{wallet.connecting ? '…' : t('hdr.connect')}</option>
+      {providers.map((provider) => <option key={provider.name} value={provider.name}>{provider.label}</option>)}
+    </select>
+  )
+}
+
+function EvmConnect() {
+  const { t } = useTranslation()
+  return (
+    <ConnectButton.Custom>
         {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
           if (!mounted) return <button className="btn ghost">…</button>
           if (!account)
@@ -69,6 +119,5 @@ export function Header(props: { tab: TabId; onTab: (t: TabId) => void; chainCont
           )
         }}
       </ConnectButton.Custom>
-    </div>
   )
 }

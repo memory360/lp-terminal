@@ -138,9 +138,9 @@ function useSolanaWalletState(): SolanaWallet {
       if (!p) throw new Error(`${labelOf(name)} not installed`)
       setConnecting(true)
       try {
-        await p.connect()
+        const result = await p.connect()
         setActive(name)
-        setPublicKey(p.publicKey?.toBase58() ?? null)
+        setPublicKey(result.publicKey.toBase58())
       } finally {
         setConnecting(false)
       }

@@ -16,6 +16,7 @@ export const zh: typeof en = {
     tokenSearch: '符号或地址…',
   },
   hdr: {
+    noSolanaWallet: '未检测到 Solana 钱包',
     pools: '池子',
     positions: '仓位',
     swap: '兑换',
