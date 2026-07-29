@@ -42,7 +42,10 @@ export function LiquidityChart(props: {
     )
 
   const { lower, upper, ticks } = query.data
-  const points = liquidityPoints(lower, upper, pool.tick, pool.liquidity, ticks)
+  // UP33/Sliipstream track staked liquidity separately; include it so the chart
+  // reflects the real depth available to swappers and incoming LPs.
+  const activeLiquidity = pool.liquidity + pool.stakedLiquidity
+  const points = liquidityPoints(lower, upper, pool.tick, activeLiquidity, ticks)
   const max = Math.max(...points.map((p) => Number(p.liquidity)), 1)
   const x = (tick: number) => 16 + ((tick - lower) / (upper - lower)) * 688
   const y = (liquidity: bigint) => 176 - (Number(liquidity) / max) * 148
@@ -93,7 +96,8 @@ async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distri
   const firstWord = Math.floor(lower / spacing) >> 8
   const lastWord = Math.floor(upper / spacing) >> 8
   const words = Array.from({ length: lastWord - firstWord + 1 }, (_, i) => firstWord + i)
-  const abi = pool.protocol === 'univ3' ? uniV3PoolAbi : clPoolAbi
+  const isUni = pool.protocol === 'univ3'
+  const abi = isUni ? uniV3PoolAbi : clPoolAbi
   const bitmaps = (await pc.multicall({
     contracts: words.map((word) => ({ abi, address: pool.address, functionName: 'tickBitmap', args: [word] })) as never,
     allowFailure: true,
@@ -114,7 +118,13 @@ async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distri
     : []
   const failedTick = tickResults.findIndex((result) => result.status !== 'success' || !result.result)
   if (failedTick >= 0) throw new Error(`tick ${initialized[failedTick]} decode failed`)
-  const ticks = initialized.map((tick, i) => ({ tick, net: tickResults[i].result![1] }))
+  const ticks = initialized.map((tick, i) => {
+    const net = tickResults[i].result![1]
+    // UP33 pools also store a stakedLiquidityNet per tick; add it to reflect
+    // the total liquidity active at each price.
+    const stakedNet = isUni ? 0n : (tickResults[i].result![2] as bigint)
+    return { tick, net: net + stakedNet }
+  })
   return {
     lower,
     upper,
