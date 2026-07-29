@@ -4,6 +4,7 @@ import type { en } from './en'
 
 export const zh: typeof en = {
   common: {
+    retry: '重试',
     connectWallet: '连接钱包',
     insufficientBalance: '余额不足',
     insufficient: '余额不足',

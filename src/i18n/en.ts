@@ -3,6 +3,7 @@
 // surface; interpolation uses i18next {{var}} syntax.
 export const en = {
   common: {
+    retry: 'RETRY',
     connectWallet: 'CONNECT WALLET',
     insufficientBalance: 'INSUFFICIENT BALANCE',
     insufficient: 'insufficient',

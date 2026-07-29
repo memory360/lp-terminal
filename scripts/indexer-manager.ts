@@ -181,7 +181,21 @@ const server = createServer(async (req, res) => {
       const upstream = new URL(indexerPath || '/', `http://localhost:${p.port}`)
       upstream.search = url.search
       try {
-        const response = await fetch(upstream)
+        let response: Response | undefined
+        let lastError: unknown
+        // A cold tsx/sqlite process can take longer than startChain's initial
+        // wait to bind its port. Keep the first browser request inside the
+        // manager instead of exposing that startup race as a permanent 502.
+        for (let attempt = 0; attempt < 20 && !response; attempt++) {
+          try {
+            response = await fetch(upstream)
+          } catch (error) {
+            lastError = error
+            if (processes.get(chainId) !== p) break
+            await new Promise((resolve) => setTimeout(resolve, 250))
+          }
+        }
+        if (!response) throw lastError ?? new Error('indexer unavailable')
         res.writeHead(response.status, {
           'content-type': response.headers.get('content-type') ?? 'application/json',
           'cache-control': response.headers.get('cache-control') ?? 'no-cache',

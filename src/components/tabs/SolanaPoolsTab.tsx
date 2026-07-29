@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useCurrentChain } from '../../hooks/useChain'
 import { useSolanaPools } from '../../hooks/useSolanaPools'
 import { fmtAmount, fmtUsd, shortAddr } from '../../lib/format'
-import { Badge } from '../ui'
+import { Badge, Btn } from '../ui'
 
 export function SolanaPoolsTab() {
   const { t } = useTranslation()
@@ -34,7 +34,12 @@ export function SolanaPoolsTab() {
     )
   }
   if (pools.isError) {
-    return <div className="red">{String(pools.error)}</div>
+    return (
+      <div className="red">
+        {String(pools.error)}{' '}
+        <Btn busy={pools.isFetching} onClick={() => void pools.refetch()}>{t('common.retry')}</Btn>
+      </div>
+    )
   }
 
   return (
