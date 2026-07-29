@@ -92,6 +92,7 @@ export const zh: typeof en = {
     buildDeviates: '构建结果偏离报价（in {{in}}, out {{out}}）— 已中止',
   },
   pools: {
+    solanaEmpty: '索引器尚未发现池子；请检查服务器 RPC_SOLANA 是否支持 getProgramAccounts 且未被限流。',
     searchPlaceholder: '搜索交易对 / 符号 / 代币 0x… / 池 0x…  ( / )',
     protoAll: '全部',
     protoAllTip: '所有协议',

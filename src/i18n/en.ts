@@ -91,6 +91,7 @@ export const en = {
     buildDeviates: 'built route deviates from quote (in {{in}}, out {{out}}) — ABORTED',
   },
   pools: {
+    solanaEmpty: 'No pools indexed yet; check that server RPC_SOLANA supports getProgramAccounts and is not rate-limited.',
     searchPlaceholder: 'search pair / symbol / token 0x… / pool 0x…  ( / )',
     protoAll: 'ALL',
     protoAllTip: 'every protocol',

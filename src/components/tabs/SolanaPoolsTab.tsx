@@ -96,6 +96,11 @@ export function SolanaPoolsTab() {
           ))}
         </tbody>
       </table>
+      {filtered.length === 0 && (
+        <div className="amber mono-sm">
+          {t('pools.solanaEmpty')}
+        </div>
+      )}
     </div>
   )
 }

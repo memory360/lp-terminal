@@ -6,7 +6,7 @@ import { PublicKey } from '@solana/web3.js'
 import { liquidityStateV4Layout, PoolInfoLayout } from '@raydium-io/raydium-sdk-v2'
 import { currentChain } from '../chains'
 import { requireSolanaChain } from '../../src/lib/chains'
-import { connection, log } from './config'
+import { log, withRpcFallback } from './config'
 import { insertPool, upsertState } from './store'
 
 const solanaChain = requireSolanaChain(currentChain)
@@ -44,11 +44,9 @@ function decodeAmmV4(data: Buffer): DecodedAmmV4 | null {
 /** Fetch all AMM V4 pool accounts and persist the ones we haven't seen. */
 export async function syncRaydiumAmmV4(): Promise<{ added: number; total: number }> {
   log('[sol-catalog] scanning Raydium AMM V4 pools...')
-  const accounts = await connection.getProgramAccounts(AMM_V4_PROGRAM_ID, {
-    filters: [{ dataSize: AMM_V4_DATA_LEN }],
-    commitment: 'confirmed',
-    encoding: 'base64',
-  })
+  const accounts = await withRpcFallback((connection) => connection.getProgramAccounts(AMM_V4_PROGRAM_ID, {
+    filters: [{ dataSize: AMM_V4_DATA_LEN }], commitment: 'confirmed', encoding: 'base64',
+  }))
 
   let added = 0
   let skipped = 0
@@ -113,11 +111,9 @@ function decodeClmm(data: Buffer): { tokenA: string; tokenB: string; vaultA: str
 /** Fetch all Raydium CLMM pool accounts and persist the ones we haven't seen. */
 export async function syncRaydiumClmm(): Promise<{ added: number; total: number }> {
   log('[sol-catalog] scanning Raydium CLMM pools...')
-  const accounts = await connection.getProgramAccounts(CLMM_PROGRAM_ID, {
-    filters: [{ dataSize: CLMM_DATA_LEN }],
-    commitment: 'confirmed',
-    encoding: 'base64',
-  })
+  const accounts = await withRpcFallback((connection) => connection.getProgramAccounts(CLMM_PROGRAM_ID, {
+    filters: [{ dataSize: CLMM_DATA_LEN }], commitment: 'confirmed', encoding: 'base64',
+  }))
 
   let added = 0
   let skipped = 0

@@ -33,7 +33,22 @@ export function rpcUrl(): string {
   return currentChain.publicRpc
 }
 
-export const connection = new Connection(rpcUrl(), 'confirmed')
+export let connection = new Connection(rpcUrl(), 'confirmed')
+
+/** Open the server-side circuit after quota/rate-limit failures too. */
+export async function withRpcFallback<T>(request: (rpc: Connection) => Promise<T>): Promise<T> {
+  try {
+    return await request(connection)
+  } catch (error) {
+    const message = String(error)
+    if (connection.rpcEndpoint === currentChain.publicRpc || !/(?:429|too many requests|compute units|quota)/i.test(message)) {
+      throw error
+    }
+    log('[sol-rpc]', `configured RPC limited; switching permanently to public RPC (${currentChain.publicRpc})`)
+    connection = new Connection(currentChain.publicRpc, 'confirmed')
+    return request(connection)
+  }
+}
 
 export const now = () => Math.floor(Date.now() / 1000)
 
