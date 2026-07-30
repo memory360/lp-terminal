@@ -1,148 +1,92 @@
-// Solana pool catalog — Raydium AMM V4 and CLMM.
-// Uses getProgramAccounts to discover pools on-chain and decodes the token
-// mints, vaults, and state. Pools are idempotently inserted into the SQLite
-// store.
-import { PublicKey } from '@solana/web3.js'
-import { liquidityStateV4Layout, PoolInfoLayout } from '@raydium-io/raydium-sdk-v2'
+// Low-cost Raydium catalog. The official API is the primary inventory source;
+// private RPC is reserved for wallet positions and transaction-time reads.
+import { parseUnits } from 'viem'
 import { currentChain } from '../chains'
 import { requireSolanaChain } from '../../src/lib/chains'
-import { log, withRpcFallback } from './config'
-import { insertPool, upsertState } from './store'
+import { log } from './config'
+import { insertPool, upsertState, upsertTokenMeta } from './store'
 
-const solanaChain = requireSolanaChain(currentChain)
-const RAYDIUM_AMM_V4 = solanaChain.programs.raydiumAmm
-const RAYDIUM_CLMM = solanaChain.programs.raydiumClmm
-if (!RAYDIUM_AMM_V4) throw new Error('Solana adapter missing raydiumAmm program id')
-if (!RAYDIUM_CLMM) throw new Error('Solana adapter missing raydiumClmm program id')
+const chain = requireSolanaChain(currentChain)
+const API = 'https://api-v3.raydium.io/pools/info/list'
+// ponytail: top 1000 by liquidity per type covers the UI; add cursor paging
+// only when long-tail pool/address lookup is required.
+const PAGE_SIZE = 1000
 
-const AMM_V4_PROGRAM_ID = new PublicKey(RAYDIUM_AMM_V4)
-const CLMM_PROGRAM_ID = new PublicKey(RAYDIUM_CLMM)
-
-// Expected account data length for a Raydium AMM V4 pool.
-const AMM_V4_DATA_LEN = 752
-
-type DecodedAmmV4 = {
-  baseDecimal: { toString(): string }
-  quoteDecimal: { toString(): string }
-  baseMint: PublicKey
-  quoteMint: PublicKey
-  lpMint: PublicKey
-  baseVault: PublicKey
-  quoteVault: PublicKey
+type Mint = { address: string; symbol: string; decimals: number }
+type ApiPool = {
+  id: string
+  programId: string
+  mintA: Mint
+  mintB: Mint
+  mintAmountA: number
+  mintAmountB: number
+  feeRate: number
+  tvl: number
+  lpMint?: Mint
+  lpAmount?: number
 }
+type ApiResponse = { success: boolean; msg?: string; data?: { data: ApiPool[] } }
 
-function decodeAmmV4(data: Buffer): DecodedAmmV4 | null {
-  if (data.length !== AMM_V4_DATA_LEN) return null
+function raw(amount: number | undefined, decimals: number): bigint | undefined {
+  if (amount == null || !Number.isFinite(amount) || amount < 0) return undefined
   try {
-    const decoded = liquidityStateV4Layout.decode(data) as DecodedAmmV4
-    return decoded
+    return parseUnits(amount.toFixed(decimals), decimals)
   } catch {
-    return null
+    return undefined
   }
 }
 
-/** Fetch all AMM V4 pool accounts and persist the ones we haven't seen. */
-export async function syncRaydiumAmmV4(): Promise<{ added: number; total: number }> {
-  log('[sol-catalog] scanning Raydium AMM V4 pools...')
-  const accounts = await withRpcFallback((connection) => connection.getProgramAccounts(AMM_V4_PROGRAM_ID, {
-    filters: [{ dataSize: AMM_V4_DATA_LEN }], commitment: 'confirmed', encoding: 'base64',
-  }))
+async function sync(poolType: 'standard' | 'concentrated', programId: string, program: string, kind: 'amm' | 'clmm') {
+  const url = new URL(API)
+  url.search = new URLSearchParams({
+    poolType,
+    poolSortField: 'liquidity',
+    sortType: 'desc',
+    pageSize: String(PAGE_SIZE),
+    page: '1',
+  }).toString()
+  const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15_000) })
+  if (!response.ok) throw new Error(`Raydium API ${response.status}`)
+  const json = await response.json() as ApiResponse
+  if (!json.success || !json.data) throw new Error(`Raydium API: ${json.msg ?? 'invalid response'}`)
 
-  let added = 0
-  let skipped = 0
-  for (const { pubkey, account } of accounts) {
-    const decoded = decodeAmmV4(Buffer.from(account.data))
-    if (!decoded) {
-      skipped++
-      continue
-    }
-    const isNew = insertPool({
-      address: pubkey.toBase58(),
-      program: 'raydium-amm-v4',
-      poolType: 'amm',
-      tokenA: decoded.baseMint.toBase58(),
-      tokenB: decoded.quoteMint.toBase58(),
-      vaultA: decoded.baseVault.toBase58(),
-      vaultB: decoded.quoteVault.toBase58(),
-      lpMint: decoded.lpMint.toBase58(),
-      decimalsA: Number(decoded.baseDecimal.toString()),
-      decimalsB: Number(decoded.quoteDecimal.toString()),
+  let synced = 0
+  for (const pool of json.data.data) {
+    if (pool.programId !== programId) continue
+    insertPool({
+      address: pool.id,
+      program,
+      poolType: kind,
+      tokenA: pool.mintA.address,
+      tokenB: pool.mintB.address,
+      decimalsA: pool.mintA.decimals,
+      decimalsB: pool.mintB.decimals,
+      symbolA: pool.mintA.symbol,
+      symbolB: pool.mintB.symbol,
+      lpMint: pool.lpMint?.address,
+      lpDecimals: pool.lpMint?.decimals,
+      feeBps: Math.round(pool.feeRate * 10_000),
     })
-    if (isNew) added++
+    upsertTokenMeta(pool.mintA.address, pool.mintA.symbol, pool.mintA.decimals)
+    upsertTokenMeta(pool.mintB.address, pool.mintB.symbol, pool.mintB.decimals)
+    upsertState(pool.id, {
+      reserveA: raw(pool.mintAmountA, pool.mintA.decimals),
+      reserveB: raw(pool.mintAmountB, pool.mintB.decimals),
+      lpTotalSupply: raw(pool.lpAmount, pool.lpMint?.decimals ?? 0),
+      tvlUsd: pool.tvl,
+    })
+    synced++
   }
-
-  const total = accounts.length
-  log(`[sol-catalog] raydium-amm-v4: ${total} accounts, ${added} new, ${skipped} skipped`)
-  return { added, total }
+  log('[sol-catalog]', `${program}: ${synced} pools synced from Raydium API`)
+  return { added: synced, total: synced }
 }
 
-const CLMM_DATA_LEN = 1544
-
-function decodeClmm(data: Buffer): { tokenA: string; tokenB: string; vaultA: string; vaultB: string; decimalsA: number; decimalsB: number; sqrtPrice: string; tickCurrent: number; liquidity: string } | null {
-  if (data.length !== CLMM_DATA_LEN) return null
-  try {
-    const decoded = PoolInfoLayout.decode(data) as {
-      mintA: PublicKey
-      mintB: PublicKey
-      vaultA: PublicKey
-      vaultB: PublicKey
-      mintDecimalsA: number
-      mintDecimalsB: number
-      sqrtPriceX64: { toString(): string }
-      tickCurrent: number
-      liquidity: { toString(): string }
-    }
-    return {
-      tokenA: decoded.mintA.toBase58(),
-      tokenB: decoded.mintB.toBase58(),
-      vaultA: decoded.vaultA.toBase58(),
-      vaultB: decoded.vaultB.toBase58(),
-      decimalsA: decoded.mintDecimalsA,
-      decimalsB: decoded.mintDecimalsB,
-      sqrtPrice: decoded.sqrtPriceX64.toString(),
-      tickCurrent: decoded.tickCurrent,
-      liquidity: decoded.liquidity.toString(),
-    }
-  } catch {
-    return null
-  }
+export const syncRaydiumAmmV4 = () => {
+  if (!chain.programs.raydiumAmm) throw new Error('Solana adapter missing raydiumAmm program id')
+  return sync('standard', chain.programs.raydiumAmm, 'raydium-amm-v4', 'amm')
 }
 
-/** Fetch all Raydium CLMM pool accounts and persist the ones we haven't seen. */
-export async function syncRaydiumClmm(): Promise<{ added: number; total: number }> {
-  log('[sol-catalog] scanning Raydium CLMM pools...')
-  const accounts = await withRpcFallback((connection) => connection.getProgramAccounts(CLMM_PROGRAM_ID, {
-    filters: [{ dataSize: CLMM_DATA_LEN }], commitment: 'confirmed', encoding: 'base64',
-  }))
-
-  let added = 0
-  let skipped = 0
-  for (const { pubkey, account } of accounts) {
-    const decoded = decodeClmm(Buffer.from(account.data))
-    if (!decoded) {
-      skipped++
-      continue
-    }
-    const isNew = insertPool({
-      address: pubkey.toBase58(),
-      program: 'raydium-clmm',
-      poolType: 'clmm',
-      tokenA: decoded.tokenA,
-      tokenB: decoded.tokenB,
-      vaultA: decoded.vaultA,
-      vaultB: decoded.vaultB,
-      decimalsA: decoded.decimalsA,
-      decimalsB: decoded.decimalsB,
-    })
-    upsertState(pubkey.toBase58(), {
-      sqrtPrice: BigInt(decoded.sqrtPrice),
-      tickCurrent: decoded.tickCurrent,
-      liquidity: BigInt(decoded.liquidity),
-    })
-    if (isNew) added++
-  }
-
-  const total = accounts.length
-  log(`[sol-catalog] raydium-clmm: ${total} accounts, ${added} new, ${skipped} skipped`)
-  return { added, total }
+export const syncRaydiumClmm = () => {
+  if (!chain.programs.raydiumClmm) throw new Error('Solana adapter missing raydiumClmm program id')
+  return sync('concentrated', chain.programs.raydiumClmm, 'raydium-clmm', 'clmm')
 }

@@ -5,9 +5,6 @@ import { createServer } from 'node:http'
 import { connection, log, PORT, sleep, TUNE } from './config'
 import { syncRaydiumAmmV4, syncRaydiumClmm } from './catalog'
 import { syncTokenPrices } from './prices'
-import { refreshPoolState } from './state'
-import { syncTokenMetadata } from './tokens'
-import { computePoolTvls } from './tvl'
 import { allPoolAddrs, db, listPools, poolCounts } from './store'
 
 let ready = false
@@ -80,28 +77,6 @@ async function catalogLoop(): Promise<void> {
   }
 }
 
-async function tokenLoop(): Promise<void> {
-  for (;;) {
-    try {
-      await syncTokenMetadata()
-    } catch (e) {
-      log('[sol-main] token metadata sync failed:', String(e))
-    }
-    await sleep(TUNE.catalogMs)
-  }
-}
-
-async function stateLoop(): Promise<void> {
-  for (;;) {
-    try {
-      await refreshPoolState()
-    } catch (e) {
-      log('[sol-main] state refresh failed:', String(e))
-    }
-    await sleep(TUNE.stateMs)
-  }
-}
-
 async function priceLoop(): Promise<void> {
   // Prices are slow-moving relative to reserves; refresh every 60s.
   for (;;) {
@@ -114,35 +89,17 @@ async function priceLoop(): Promise<void> {
   }
 }
 
-async function tvlLoop(): Promise<void> {
-  // Run right after state refresh so reserves are fresh.
-  for (;;) {
-    try {
-      await computePoolTvls()
-    } catch (e) {
-      log('[sol-main] tvl compute failed:', String(e))
-    }
-    await sleep(TUNE.stateMs)
-  }
-}
-
 async function boot(): Promise<void> {
   log('[sol-main]', `starting — chain=solana — rpc=${connection.rpcEndpoint.replace(/\/v2\/.*/, '/v2/...')}`)
   startApi()
   // First scan blocks readiness until we have at least some pools.
   await syncRaydiumAmmV4().catch((e) => log('[sol-main] initial scan failed:', String(e)))
   await syncRaydiumClmm().catch((e) => log('[sol-main] initial CLMM scan failed:', String(e)))
-  // Backfill metadata, reserves, prices and TVL so the API is useful immediately.
-  await syncTokenMetadata().catch((e) => log('[sol-main] initial token metadata failed:', String(e)))
-  await refreshPoolState().catch((e) => log('[sol-main] initial state refresh failed:', String(e)))
+  // Raydium supplies metadata, reserves and TVL; prices use HTTP APIs too.
   await syncTokenPrices().catch((e) => log('[sol-main] initial price sync failed:', String(e)))
-  await computePoolTvls().catch((e) => log('[sol-main] initial tvl compute failed:', String(e)))
   ready = allPoolAddrs().length > 0
   catalogLoop()
-  tokenLoop()
-  stateLoop()
   priceLoop()
-  tvlLoop()
 }
 
 boot().catch((e) => {
