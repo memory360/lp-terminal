@@ -101,6 +101,7 @@ export type ClPosition = {
   fees0: bigint // uncollected fees (wallet positions only)
   fees1: bigint
   earned: bigint // pending UP (staked positions only)
+  stakedAt: number | null // current gauge deposit timestamp (unix seconds)
 }
 
 export type V2Position = {

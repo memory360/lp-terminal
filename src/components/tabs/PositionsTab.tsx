@@ -19,7 +19,7 @@ import {
 import { fmtApr } from '../../lib/apr'
 import { fmtAmount, fmtNum, fmtUsd, shortAddr } from '../../lib/format'
 import { limitFillFrac, limitSideFor, limitTagOf, untagLimit } from '../../lib/limit'
-import { clPosMetrics, v2PosMetrics, type Earning, type StakeComparison } from '../../lib/posmetrics'
+import { clPosMetrics, pendingUpPerDay, v2PosMetrics, type Earning, type StakeComparison } from '../../lib/posmetrics'
 import type { PoolStat } from '../../lib/poolstats'
 import { deadline, ensureAllowance, fetchSqrtPriceX96, offerSwapClaimedUp, step } from '../../lib/tx'
 import { txlog } from '../../lib/txlog'
@@ -151,6 +151,15 @@ export function PositionsTab() {
     if (m.staked?.kind === 'emissions') upPerDayTotal += m.staked.upPerDay
   }
   const pendingUpUsd = upUsd !== undefined ? (Number(pendingUp) / 1e18) * upUsd : null
+  const now = Date.now() / 1000
+  const timedStakes = data.cl.filter((p) => p.stakedAt && p.stakedAt < now)
+  const oldestStake = timedStakes.length ? Math.min(...timedStakes.map((p) => p.stakedAt!)) : null
+  const actualUpPerDay = timedStakes.reduce(
+    (sum, p) => sum + (pendingUpPerDay(p.earned, p.stakedAt, now) ?? 0),
+    0,
+  )
+  const stakeDays = oldestStake ? Math.floor((now - oldestStake) / 86_400) : 0
+  const stakeHours = oldestStake ? Math.floor(((now - oldestStake) % 86_400) / 3_600) : 0
 
   // display order: staked first, then up33 wallet, then uniswap — biggest first
   const rank = (p: ClPosition) => (p.staked ? 0 : p.pool.protocol === 'up33' ? 1 : 2)
@@ -253,11 +262,19 @@ export function PositionsTab() {
         <Stat
           k={t('pos.pendingUp')}
           aside={
-            upUsd !== undefined
-              ? t('pos.upUnitPrice', {
-                  usd: `$${upUsd.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })}`,
-                })
-              : undefined
+            <>
+              {upUsd !== undefined && t('pos.upUnitPrice', {
+                usd: `$${upUsd.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })}`,
+              })}
+              {oldestStake && (
+                <><br /><span title={t('pos.actualStakeYieldTip')}>
+                  {t('pos.stakedFor', { days: stakeDays, hours: stakeHours })}
+                  {upUsd !== undefined && actualUpPerDay > 0
+                    ? ` (${t('pos.actualPerDay', { usd: fmtUsd(actualUpPerDay * upUsd) })})`
+                    : ''}
+                </span></>
+              )}
+            </>
           }
           v={
             <Flash v={Number(pendingUp)} arrow>

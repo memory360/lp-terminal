@@ -280,6 +280,9 @@ export const zh: typeof en = {
     upUnitPrice: '1 UP ≈ {{usd}}',
     upPerDay: '+{{n}} UP/天',
     upPerDayUsd: '(≈{{usd}}/天)',
+    stakedFor: '已质押 {{days}}天 {{hours}}小时',
+    actualPerDay: '实际待领日均 ≈{{usd}}/天',
+    actualStakeYieldTip: '当前待领 UP ÷ 本次质押时长；若中途领取过奖励，该日均会偏低。下方为按当前排放计算的瞬时预估',
     earnEmitLiveTip: '实时 UP 排放 = 全池 UP 速率 × 仓位流动性 ÷ 当前区间内的已质押流动性；其他仓位质押/退出或价格跨 tick 时会阶梯变化',
     stakeAdvice: {
       stake: '建议质押 LP',

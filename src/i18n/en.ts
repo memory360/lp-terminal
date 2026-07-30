@@ -280,6 +280,9 @@ export const en = {
     upUnitPrice: '1 UP ≈ {{usd}}',
     upPerDay: '+{{n}} UP/day',
     upPerDayUsd: '(≈{{usd}}/day)',
+    stakedFor: 'staked {{days}}d {{hours}}h',
+    actualPerDay: 'actual pending avg ≈{{usd}}/day',
+    actualStakeYieldTip: 'Pending UP divided by this staking duration; this understates the average if rewards were claimed meanwhile. The line below is the current emission-rate estimate',
     earnEmitLiveTip: 'Live UP emissions = pool UP rate × position liquidity ÷ active staked liquidity; it changes in steps when positions stake/unstake or price crosses ticks',
     stakeAdvice: {
       stake: 'STAKING RECOMMENDED',

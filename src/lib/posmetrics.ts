@@ -39,6 +39,10 @@ export type StakeComparison = {
 const DAY = 86_400
 const YEAR_DAYS = 365
 
+export function pendingUpPerDay(earned: bigint, stakedAt: number | null, now: number): number | null {
+  return stakedAt && now > stakedAt ? (Number(earned) / 1e18) * DAY / (now - stakedAt) : null
+}
+
 const emitting = (p: { rewardRate: bigint; periodFinish: bigint }) =>
   p.rewardRate > 0n && p.periodFinish > BigInt(nowSec())
 

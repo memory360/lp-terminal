@@ -3,7 +3,7 @@ import { usePublicClient } from 'wagmi'
 import type { Address, PublicClient } from 'viem'
 import { clGaugeAbi, clPmAbi, erc20Abi, uniV3FactoryAbi, uniV3PmAbi, uniV3PoolAbi, v2GaugeAbi, v2PoolAbi } from '../abi'
 import { MAX_UINT128, getAmountsForLiquidity, getSqrtRatioAtTick } from '../lib/clmath'
-import { requireEvmChain, type ChainAdapter } from '../lib/chains'
+import { requireEvmChain, type ChainAdapter, type EvmChainAdapter } from '../lib/chains'
 import type { ClPool, ClPosition, PoolsData, PositionsData, TokenInfo, V2Pool, V2Position } from '../types'
 import { usePools } from './usePools'
 import { useCurrentChain } from './useChain'
@@ -35,6 +35,30 @@ type RawPos = readonly [
 // same tuple shape as RawPos, but index 4 is the uint24 fee tier (univ3 NPMs
 // are fee-keyed where Slipstream is tickSpacing-keyed)
 type RawUniPos = RawPos
+
+const CL_DEPOSIT_TOPIC = '0x1c8ab8c7f45390d58f58f1d655213a82cca5d12179761a87c16f098813b8f211'
+const stakeTimeCache = new Map<string, Promise<number | null>>()
+
+function fetchStakeTime(chain: EvmChainAdapter, gauge: Address, tokenId: bigint): Promise<number | null> {
+  const key = `${chain.id}:${gauge.toLowerCase()}:${tokenId}`
+  const cached = stakeTimeCache.get(key)
+  if (cached) return cached
+  const request = (async () => {
+    try {
+      const url = new URL(chain.explorerApi.logsUrl({ fromBlock: 0, address: gauge, topic0: CL_DEPOSIT_TOPIC }))
+      url.searchParams.set('topic2', `0x${tokenId.toString(16).padStart(64, '0')}`)
+      url.searchParams.set('topic0_2_opr', 'and')
+      const response = await fetch(url)
+      if (!response.ok) return null
+      const json = (await response.json()) as { result?: { timeStamp?: string }[] }
+      return Math.max(0, ...(json.result ?? []).map((log) => Number.parseInt(log.timeStamp ?? '0', 16))) || null
+    } catch {
+      return null
+    }
+  })()
+  stakeTimeCache.set(key, request)
+  return request
+}
 
 /**
  * Uniswap v3 wallet positions (official Robinhood Chain deployment). Pools are
@@ -185,6 +209,7 @@ async function fetchUniPositions(
       fees0: raw[10],
       fees1: raw[11],
       earned: 0n,
+      stakedAt: null,
     })
   }
   return { cl, tokens }
@@ -320,6 +345,7 @@ async function fetchPositions(
       fees0: raw[10],
       fees1: raw[11],
       earned,
+      stakedAt: null,
     }
   }
 
@@ -337,6 +363,12 @@ async function fetchPositions(
     const pos = buildPos(id, raw, true, earned)
     if (pos) cl.push(pos)
   })
+
+  await Promise.all(
+    cl.filter((p) => p.staked && p.pool.gauge).map(async (p) => {
+      p.stakedAt = await fetchStakeTime(evmChain, p.pool.gauge!, p.tokenId)
+    }),
+  )
 
   // univ3 wallet positions join here so the fee simulation below covers them
   const uni = await uniP

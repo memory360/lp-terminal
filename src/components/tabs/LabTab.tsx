@@ -57,6 +57,7 @@ const labPos = (lower: number, upper: number, liquidity: bigint): ClPosition => 
   fees0: 0n,
   fees1: 0n,
   earned: 0n,
+  stakedAt: null,
 })
 const labRun = async (fn: () => Promise<unknown>) => {
   await fn()
