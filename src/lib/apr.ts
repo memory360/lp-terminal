@@ -85,6 +85,9 @@ export function clTokenUsd(
   upUsd?: number,
   wethUsd?: number | null,
 ): { p0: number; p1: number } | null {
+  // An empty CL pool may be initialized at any sqrt price; until liquidity is
+  // present that quote is not executable and must not be treated as a price.
+  if (pool.liquidity <= 0n) return null
   const chain = requireEvmChain(getCurrentChain())
   const anchors: Record<string, number | undefined> = {
     [chain.anchors.stable.toLowerCase()]: 1,
