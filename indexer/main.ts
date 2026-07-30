@@ -2,8 +2,8 @@
 // on-chain state sweeps + GT enrichment, served over a tiny read-only API.
 // Run: `npm run indexer` (tsx). Data lives in indexer/data/index.db (SQLite).
 //
-// Boot: backfill → token meta → full state sweep → GT cycle → reprice → ready.
-// Loops: tail 10s · hot sweep 60s · full sweep 60min · GT stats 5min.
+// Boot: catalog → GT active set → bounded metadata/state sweep → ready.
+// Loops: tail 10s · hot sweep 60s · active sweep 60min · GT stats 5min.
 // The API starts listening immediately; `ready:false` in responses tells the
 // frontend to keep using its client-side fallback until the first pass lands.
 import { currentChain } from './chains'
@@ -12,7 +12,7 @@ import { formatRpcError, usingPrivateRpc } from './rpc'
 import { backfillV3, syncV2, tailV3 } from './catalog'
 import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
-import { activeAddrs, allPoolAddrs, db, hotAddrs, kvGet, kvSet, poolCounts } from './store'
+import { activeAddrs, db, featuredAddrs, hotAddrs, kvGet, kvSet, poolCounts } from './store'
 import { startApi } from './api'
 import { backfillVirtuals, tailVirtuals } from './virtuals'
 
@@ -46,18 +46,20 @@ async function boot(): Promise<void> {
     log(`[catalog] univ3 backfill done: +${addedV3} pools (${(msV3 / 1000).toFixed(0)}s)`)
     kvSet('v3_boot_logged', '1')
   }
-  const [freshV2, msV2] = await timed(syncV2)
+  const [freshV2, msV2] = await timed(() => syncV2(true))
   if (freshV2.length) log(`[catalog] univ2 sync: +${freshV2.length} pairs (${(msV2 / 1000).toFixed(0)}s)`)
   log('[catalog]', poolCounts().map((c) => `${c.proto}=${c.n}`).join(' '))
 
-  const [metaN, msMeta] = await timed(ensureTokenMeta)
+  // The catalog remains complete, but expensive metadata/state reads are
+  // bounded to pools surfaced by the HTTP stats lists. Long-tail pools are
+  // hydrated only when they are newly created.
+  await gtCycle().catch((e) => log('[stats] gt cycle failed:', String(e).slice(0, 120)))
+  const featured = featuredAddrs()
+  const [metaN, msMeta] = await timed(() => ensureTokenMeta(featured))
   if (metaN) log(`[tokens] metadata fetched for ${metaN} tokens (${(msMeta / 1000).toFixed(0)}s)`)
 
-  const all = allPoolAddrs()
-  const [, msSweep] = await timed(() => sweepState(all))
-  log(`[sweep] full ${all.length} pools (${(msSweep / 1000).toFixed(0)}s)`)
-
-  await gtCycle().catch((e) => log('[stats] gt cycle failed:', String(e).slice(0, 120)))
+  const [, msSweep] = await timed(() => sweepState(featured))
+  log(`[sweep] featured ${featured.length} pools (${(msSweep / 1000).toFixed(0)}s)`)
   const pr = reprice()
   log(`[price] ${pr.priced} tokens priced · tvl on ${pr.tvlPools} pools`)
 
@@ -68,7 +70,7 @@ async function boot(): Promise<void> {
     const fresh = [...(await tailV3()), ...(await syncV2())]
     if (fresh.length) {
       log(`[tail] ${fresh.length} new pools`)
-      await ensureTokenMeta()
+      await ensureTokenMeta(fresh)
       await sweepState(fresh)
       computeTvlFor(fresh)
     }
@@ -83,12 +85,6 @@ async function boot(): Promise<void> {
     const [, ms] = await timed(() => sweepState(addrs))
     const p = reprice()
     log(`[sweep] active ${addrs.length} pools (${(ms / 1000).toFixed(0)}s) · ${p.priced} tokens priced · tvl on ${p.tvlPools}`)
-  })
-  loop('census', TUNE.censusMs, async () => {
-    const addrs = allPoolAddrs()
-    const [, ms] = await timed(() => sweepState(addrs))
-    const p = reprice()
-    log(`[sweep] census ${addrs.length} pools (${(ms / 1000).toFixed(0)}s) · tvl on ${p.tvlPools}`)
   })
   loop('stats', TUNE.statsMs, async () => {
     await gtCycle()

@@ -36,8 +36,8 @@ const printable = (s: unknown): string | null => {
 }
 
 /** fetch symbol/decimals for catalog tokens we haven't met yet (10k/slice) */
-export async function ensureTokenMeta(): Promise<number> {
-  const all = missingMetaTokens()
+export async function ensureTokenMeta(poolAddrs?: string[]): Promise<number> {
+  const all = missingMetaTokens(poolAddrs)
   for (let i = 0; i < all.length; i += 10_000) {
     const missing = all.slice(i, i + 10_000)
     const res = await mc(

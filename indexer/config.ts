@@ -19,7 +19,6 @@ export const TUNE = {
   tailMs: 10_000, // factory tail + v2 allPairsLength poll
   hotSweepMs: 60_000, // state refresh for hot pools
   fullSweepMs: 3_600_000, // state refresh for ACTIVE pools (≥$100 TVL or <48h old)
-  censusMs: 21_600_000, // 6h full-catalog dust census (~114k pools and growing)
   statsMs: 300_000, // GeckoTerminal enrichment cycle
   virtualsMs: 60_000, // low-frequency Virtuals launch tag refresh
   gtPaceMs: 2_600, // ≥2.6s between GT calls (free tier: 30/min)

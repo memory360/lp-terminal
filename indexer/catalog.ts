@@ -64,7 +64,7 @@ export async function backfillV3(): Promise<number> {
   if (process.env.INDEXER_BACKFILL === 'rpc') {
     log(`[catalog] v3 backfill via RPC windows from blk ${cursor} (INDEXER_BACKFILL=rpc)`)
     const head = Number(await pc.getBlockNumber())
-    added = (await scanV3Windows(cursor, head)).length
+    added = (await scanV3Windows(cursor, head, true)).length
     kvSet('v3_cursor', String(head))
     kvSet('v3_backfilled', '1')
     return added
@@ -81,7 +81,7 @@ export async function backfillV3(): Promise<number> {
         // Blockscout is down/unhappy — finish the remaining range over RPC
         log(`[catalog] blockscout flaking ("${j.message}") — RPC-window fallback from blk ${cursor}`)
         const head = Number(await pc.getBlockNumber())
-        added += (await scanV3Windows(cursor, head)).length
+        added += (await scanV3Windows(cursor, head, true)).length
         kvSet('v3_cursor', String(head))
         break
       }
@@ -103,6 +103,7 @@ export async function backfillV3(): Promise<number> {
             feePpm: hexInt(l.topics[3]),
             tickSpacing,
             createdBlock: hexInt(l.blockNumber),
+            addedTs: 0, // historical backfill is not a newly-created hot pool
           })
         )
           added++
@@ -120,7 +121,7 @@ export async function backfillV3(): Promise<number> {
 }
 
 /** windowed RPC getLogs scan (≤9k blocks per request — under Alchemy's 10k cap) */
-async function scanV3Windows(from: number, to: number): Promise<string[]> {
+async function scanV3Windows(from: number, to: number, historical = false): Promise<string[]> {
   const fresh: string[] = []
   let logged = 0
   for (let lo = from; lo <= to; lo += 9_001) {
@@ -143,6 +144,7 @@ async function scanV3Windows(from: number, to: number): Promise<string[]> {
           feePpm: a.fee,
           tickSpacing: a.tickSpacing,
           createdBlock: Number(l.blockNumber),
+          addedTs: historical ? 0 : undefined,
         })
       )
         fresh.push(a.pool.toLowerCase())
@@ -167,7 +169,7 @@ export async function tailV3(): Promise<string[]> {
  * seen yet. The cursor only advances past indices that fully resolved, so a
  * partial multicall failure is retried on the next tick.
  */
-export async function syncV2(): Promise<string[]> {
+export async function syncV2(historical = false): Promise<string[]> {
   const count = Number(
     await pc.readContract({ abi: uniV2FactoryAbi, address: chain.uniswap.v2Factory, functionName: 'allPairsLength' }),
   )
@@ -207,6 +209,7 @@ export async function syncV2(): Promise<string[]> {
             token1: t1,
             feePpm: 3_000, // vanilla v2: fixed 0.30%
             pairIndex: known + i,
+            addedTs: historical ? 0 : undefined,
           })
         )
           fresh.push(pairs[i].toLowerCase())

@@ -85,6 +85,13 @@ const kvSetQ = db.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO
 export const kvGet = (k: string): string | undefined => (kvGetQ.get(k) as { v: string } | undefined)?.v
 export const kvSet = (k: string, v: string) => void kvSetQ.run(k, v)
 
+// One-time repair for older indexers that stamped every historical backfill
+// row as newly created, causing the entire catalog to enter hot/active sweeps.
+if (!kvGet('historical_hotset_repaired')) {
+  db.exec('UPDATE pools SET added_ts = 0')
+  kvSet('historical_hotset_repaired', '1')
+}
+
 // ---- pools ----
 const insPoolQ = db.prepare(`
   INSERT OR IGNORE INTO pools (address, proto, token0, token1, fee_ppm, tick_spacing, created_block, pair_index, added_ts)
@@ -99,6 +106,7 @@ export function insertPool(p: {
   tickSpacing?: number
   createdBlock?: number
   pairIndex?: number
+  addedTs?: number
 }): boolean {
   const r = insPoolQ.run(
     p.address.toLowerCase(),
@@ -109,7 +117,7 @@ export function insertPool(p: {
     p.tickSpacing ?? null,
     p.createdBlock ?? null,
     p.pairIndex ?? null,
-    now(),
+    p.addedTs ?? now(),
   )
   return Number(r.changes) > 0
 }
@@ -126,6 +134,10 @@ const poolsByAddrQ = db.prepare('SELECT address, proto, token0, token1, fee_ppm,
 export const poolRow = (addr: string) => poolsByAddrQ.get(addr.toLowerCase()) as PoolRow | undefined
 export const allPoolAddrs = (): string[] =>
   (db.prepare('SELECT address FROM pools').all() as { address: string }[]).map((r) => r.address)
+/** Pools surfaced by the bounded GeckoTerminal top lists. */
+export const featuredAddrs = (): string[] =>
+  (db.prepare('SELECT address FROM pool_stats ORDER BY COALESCE(liq_usd, 0) DESC LIMIT 600').all() as { address: string }[])
+    .map((r) => r.address)
 export const poolCounts = () =>
   db.prepare(`SELECT proto, COUNT(*) AS n FROM pools GROUP BY proto`).all() as { proto: string; n: number }[]
 
@@ -163,15 +175,19 @@ export type TokenRow = {
   price_updated: number | null
 }
 export const allTokens = () => db.prepare('SELECT * FROM tokens').all() as TokenRow[]
-export const missingMetaTokens = (): string[] =>
-  (
-    db
-      .prepare(
-        `SELECT DISTINCT u.addr FROM (SELECT token0 AS addr FROM pools UNION SELECT token1 FROM pools) u
-         LEFT JOIN tokens t ON t.address = u.addr WHERE t.address IS NULL`,
-      )
-      .all() as { addr: string }[]
-  ).map((r) => r.addr)
+export const missingMetaTokens = (poolAddrs?: string[]): string[] => {
+  const addrs = new Set<string>()
+  if (poolAddrs) {
+    const q = db.prepare('SELECT token0, token1 FROM pools WHERE address = ?')
+    for (const pool of poolAddrs) {
+      const row = q.get(pool) as { token0: string; token1: string } | undefined
+      if (row) { addrs.add(row.token0); addrs.add(row.token1) }
+    }
+  }
+  const candidates = poolAddrs ? [...addrs] : (db.prepare('SELECT token0 FROM pools UNION SELECT token1 FROM pools').all() as { token0: string }[]).map((r) => r.token0)
+  const missing = db.prepare('SELECT 1 FROM tokens WHERE address = ?')
+  return candidates.filter((address) => !missing.get(address))
+}
 
 // ---- pool_state ----
 const upStateQ = db.prepare(`

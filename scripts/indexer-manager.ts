@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { bsc, getAllChains, getChainById, getChainByKey, isEvmChain, robinhood, type ChainAdapter } from '../src/lib/chains'
 
 const PORT = Number(process.env.INDEXER_MANAGER_PORT || 8790)
+const IDLE_MS = Number(process.env.INDEXER_IDLE_MS || 10 * 60_000)
 const DEFAULT_CHAIN_KEY = (process.env.CHAIN ?? 'robinhood').toLowerCase().trim()
 const DEFAULT_CHAIN = getChainByKey(DEFAULT_CHAIN_KEY) ?? robinhood
 
@@ -178,6 +179,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && action === 'indexer') {
       const p = processes.get(chainId)
       if (!p) return sendJson(res, 503, { error: 'indexer not running' })
+      p.lastUsed = Date.now()
       const indexerPath = '/' + parts.slice(4).join('/')
       const upstream = new URL(indexerPath || '/', `http://localhost:${p.port}`)
       upstream.search = url.search
@@ -271,3 +273,16 @@ function shutdown() {
 
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
+
+// A browser starts its selected chain on mount and every proxied request
+// refreshes lastUsed. With no users, child indexers release CPU/RAM while the
+// tiny manager remains available to start them again.
+setInterval(() => {
+  const cutoff = Date.now() - IDLE_MS
+  for (const [id, p] of processes) {
+    if (!p.stopping && p.lastUsed < cutoff) {
+      log(p.chain.key, `idle for ${Math.round(IDLE_MS / 60_000)}m; stopping indexer`)
+      stopChain(id)
+    }
+  }
+}, 60_000).unref()
