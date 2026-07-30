@@ -115,7 +115,9 @@ export async function fetchUniIndex(
       vol24hUsd: p.vol24hUsd,
       vol1hUsd: p.vol1hUsd,
       createdAt: p.createdAt,
-      liqUsd: p.tvlUsd ?? p.gtLiqUsd, // chain-derived TVL first, GT reserve as backstop
+      // Match the server's ordering/filter source. The local chain estimate can
+      // be stale or distorted by a bad token price; GT is the canonical browse TVL.
+      liqUsd: p.gtLiqUsd ?? p.tvlUsd,
       source: p.statsSource === 'geckoterminal' ? 'geckoterminal' : 'chain',
     }
   }

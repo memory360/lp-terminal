@@ -32,7 +32,7 @@ function poolsWhere(params: Params): { where: string; args: (string | number)[] 
 
   const minTvl = Number(params.get('min_tvl'))
   if (Number.isFinite(minTvl) && minTvl > 0) {
-    clauses.push('COALESCE(s.tvl_usd, st.liq_usd) >= ?')
+    clauses.push('COALESCE(st.liq_usd, s.tvl_usd) >= ?')
     args.push(minTvl)
   }
 
@@ -59,7 +59,7 @@ function poolsWhere(params: Params): { where: string; args: (string | number)[] 
 }
 
 const ORDER: Record<string, string> = {
-  tvl: 'ORDER BY (COALESCE(s.tvl_usd, st.liq_usd) IS NULL), COALESCE(s.tvl_usd, st.liq_usd) DESC',
+  tvl: 'ORDER BY (COALESCE(st.liq_usd, s.tvl_usd) IS NULL), COALESCE(st.liq_usd, s.tvl_usd) DESC',
   vol: 'ORDER BY (st.vol24h_usd IS NULL), st.vol24h_usd DESC',
   created: 'ORDER BY (p.created_block IS NULL), p.created_block DESC, p.pair_index DESC',
 }

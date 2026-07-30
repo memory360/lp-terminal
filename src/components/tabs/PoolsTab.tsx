@@ -118,8 +118,8 @@ export function PoolsTab() {
 
   // UP33 registry pools + on-chain-verified uniswap v3 browse results, one table
   const data: PoolsData = uni.data
-    ? { ...pools.data, tokens: { ...pools.data.tokens, ...uni.data.tokens } }
-    : pools.data
+    ? { ...pools.data, tokens: { ...pools.data.tokens, ...uni.data.tokens, ...positions.data?.tokens } }
+    : { ...pools.data, tokens: { ...pools.data.tokens, ...positions.data?.tokens } }
   const byPool = stats.data?.byPool
   const uniStats = uni.data?.stats
   const statOf = (p: Pool) => byPool?.[p.address.toLowerCase()] ?? uniStats?.[p.address.toLowerCase()]
@@ -168,7 +168,14 @@ export function PoolsTab() {
         : null
     addPosition(pos.pool, m?.valueUsd === undefined || m.valueUsd === null ? null : m.valueUsd + (m.feesUsd ?? 0))
   }
-  let list = [...pools.data.pools, ...(uni.data?.pools ?? [])].filter((p) => {
+  const candidates = new Map(
+    [...pools.data.pools, ...(uni.data?.pools ?? [])].map((p) => [p.address.toLowerCase(), p]),
+  )
+  if (!q || onlyMine) {
+    for (const position of positions.data?.cl ?? []) candidates.set(position.pool.address.toLowerCase(), position.pool)
+    for (const position of positions.data?.v2 ?? []) candidates.set(position.pool.address.toLowerCase(), position.pool)
+  }
+  let list = [...candidates.values()].filter((p) => {
     if (onlyMine && !mySet.has(p.address.toLowerCase())) return false
     if (proto !== 'all' && p.protocol !== proto) return false
     if (!q) return true

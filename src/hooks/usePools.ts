@@ -20,7 +20,20 @@ type McRes = { status: 'success' | 'failure'; result?: unknown; error?: Error }
 
 async function mc(pc: PublicClient, contracts: unknown[]): Promise<McRes[]> {
   if (contracts.length === 0) return []
-  return (await pc.multicall({ contracts: contracts as never })) as McRes[]
+  const out: McRes[] = []
+  // Public RPCs commonly throttle viem's large concurrent multicall fan-out.
+  // Keep requests bounded and sequential so one failed chunk cannot erase the
+  // rest of the UP33 registry.
+  for (let i = 0; i < contracts.length; i += 250) {
+    const chunk = contracts.slice(i, i + 250)
+    try {
+      out.push(...((await pc.multicall({ contracts: chunk as never, batchSize: 250_000 })) as McRes[]))
+    } catch (error) {
+      out.push(...chunk.map(() => ({ status: 'failure' as const, error: error as Error })))
+    }
+    if (i + 250 < contracts.length) await new Promise((resolve) => setTimeout(resolve, 40))
+  }
+  return out
 }
 
 function ok<T>(r: McRes | undefined): T | undefined {
@@ -73,6 +86,7 @@ export async function fetchPools(pc: PublicClient, chain: ChainAdapter): Promise
     { abi: voterAbi, address: ADDR.VOTER, functionName: 'totalWeight' },
     { abi: voterAbi, address: ADDR.VOTER, functionName: 'capMode' },
   ])
+  if (head.some((r) => r.status === 'failure')) throw new Error('UP33 registry header incomplete')
   const blockNumber = await pc.getBlockNumber()
 
   const v2N = Math.min(Number(ok<bigint>(head[0]) ?? 0n), 300)
@@ -94,6 +108,9 @@ export async function fetchPools(pc: PublicClient, chain: ChainAdapter): Promise
   ])
   const v2Addrs = addrRes.slice(0, v2N).map((r) => ok<Address>(r)).filter(Boolean) as Address[]
   const clAddrs = addrRes.slice(v2N).map((r) => ok<Address>(r)).filter(Boolean) as Address[]
+  if (v2Addrs.length !== v2N || clAddrs.length !== clN) {
+    throw new Error(`UP33 pool registry incomplete (${v2Addrs.length}/${v2N} v2, ${clAddrs.length}/${clN} cl)`)
+  }
 
   // ---- per-pool detail ----
   const detail: unknown[] = []
@@ -121,6 +138,7 @@ export async function fetchPools(pc: PublicClient, chain: ChainAdapter): Promise
     )
   }
   const det = await mc(pc, detail)
+  if (det.some((r) => r.status === 'failure')) throw new Error('UP33 pool details incomplete')
 
   const v2Pools: V2Pool[] = []
   let i = 0
@@ -213,6 +231,9 @@ export async function fetchPools(pc: PublicClient, chain: ChainAdapter): Promise
     }
   })
   const p2 = await mc(pc, pass2)
+  if (p2.some((r) => r.status === 'failure')) {
+    throw new Error('UP33 gauge data incomplete')
+  }
   p2.forEach((r, j) => {
     const tag = pass2Tag[j]
     if (tag.kind === 'v2fee') {
@@ -287,7 +308,7 @@ export function usePools() {
   return useQuery({
     queryKey: ['pools', chain.id],
     enabled: !!pc,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     queryFn: () => fetchPools(pc as PublicClient, chain),
   })
 }

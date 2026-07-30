@@ -7,10 +7,25 @@ const url = rpcUrl()
 export const usingPrivateRpc = url !== PUBLIC_RPC
 let publicOnly = !usingPrivateRpc
 
-/** Alchemy and other providers do not use one stable error shape for quota
- * failures, so inspect the complete error (including nested JSON-RPC data). */
-export const isRpcLimitedError = (error: unknown): boolean =>
-  /(?:\b429\b|too many requests|capacity limit|compute units|rate limit|quota)/i.test(String(error))
+/** Alchemy and other providers wrap quota failures several `cause` levels
+ * deep. `String(error)` only contains viem's generic outer message, so walk
+ * the error chain without serialising request objects (which may contain the
+ * private RPC URL). */
+export const isRpcLimitedError = (error: unknown): boolean => {
+  const seen = new Set<unknown>()
+  let value: unknown = error
+  const parts: string[] = []
+  while (value && typeof value === 'object' && !seen.has(value)) {
+    seen.add(value)
+    const e = value as Record<string, unknown>
+    for (const key of ['message', 'details', 'shortMessage', 'code']) {
+      if (typeof e[key] === 'string' || typeof e[key] === 'number') parts.push(String(e[key]))
+    }
+    value = e.cause
+  }
+  if (parts.length === 0) parts.push(String(error))
+  return /(?:\b429\b|too many requests|capacity limit|compute units|rate limit|quota)/i.test(parts.join(' '))
+}
 
 /** A process-lifetime circuit breaker. Once the configured RPC reports a
  * quota/rate-limit failure it is never probed again; the failed request and
