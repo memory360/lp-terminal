@@ -1,20 +1,54 @@
-import { createPublicClient, http, type PublicClient } from 'viem'
+import { createPublicClient, http, type PublicClient, type Transport } from 'viem'
 import { currentChain } from './chains'
 import { requireEvmChain } from '../src/lib/chains'
 import { log, PUBLIC_RPC, TUNE, rpcUrl, sleep } from './config'
 
 const url = rpcUrl()
 export const usingPrivateRpc = url !== PUBLIC_RPC
+let publicOnly = !usingPrivateRpc
+
+/** Alchemy and other providers do not use one stable error shape for quota
+ * failures, so inspect the complete error (including nested JSON-RPC data). */
+export const isRpcLimitedError = (error: unknown): boolean =>
+  /(?:\b429\b|too many requests|capacity limit|compute units|rate limit|quota)/i.test(String(error))
+
+/** A process-lifetime circuit breaker. Once the configured RPC reports a
+ * quota/rate-limit failure it is never probed again; the failed request and
+ * all later requests go directly to the key-free public node. */
+function circuitBreakingTransport(): Transport {
+  const primary = http(url, { timeout: 10_000, retryCount: 0 })
+  const fallback = http(PUBLIC_RPC, { timeout: 15_000, retryCount: 2, retryDelay: 600 })
+  return (config) => {
+    const primaryClient = primary(config)
+    const fallbackClient = fallback(config)
+    return {
+      ...primaryClient,
+      key: `rpc-circuit-${currentChain.id}`,
+      name: `RPC circuit breaker ${currentChain.name}`,
+      request: async (args) => {
+        if (publicOnly) return fallbackClient.request(args)
+        try {
+          return await primaryClient.request(args)
+        } catch (error) {
+          if (!isRpcLimitedError(error)) throw error
+          publicOnly = true
+          log('[rpc] configured RPC limited; switching permanently to public RPC')
+          return fallbackClient.request(args)
+        }
+      },
+    }
+  }
+}
 // timeout is deliberately tight: a healthy 400-call aggregate answers in 2-4s
 // (measured 2026-07-16); a stalled attempt should fail fast and retry, not
 // pin the whole boot for 30s. Bad chunks degrade to sub-chunks in mc().
 export const pc: PublicClient = createPublicClient({
   chain: requireEvmChain(currentChain).viemChain,
-  transport: http(url, { timeout: 10_000, retryCount: 2, retryDelay: 400 }),
+  transport: circuitBreakingTransport(),
 })
 
 /** error text safe to log — the RPC url (secret) is redacted */
-const redact = (e: unknown) =>
+export const formatRpcError = (e: unknown) =>
   String(e instanceof Error ? `${e.name}: ${e.message.split('\n')[0]}` : e)
     .replaceAll(url, '<rpc>')
     .slice(0, 120)
@@ -41,7 +75,7 @@ export async function mc(calls: Call[]): Promise<McRes[]> {
     try {
       out.push(...(await agg(chunk)))
     } catch (e) {
-      log('[rpc] chunk failed, retrying:', redact(e))
+      log('[rpc] chunk failed, retrying:', formatRpcError(e))
       await sleep(600)
       try {
         out.push(...(await agg(chunk)))
@@ -51,7 +85,7 @@ export async function mc(calls: Call[]): Promise<McRes[]> {
           try {
             out.push(...(await agg(part)))
           } catch (e2) {
-            log(`[rpc] dropped ${part.length}-call sub-chunk:`, redact(e2))
+            log(`[rpc] dropped ${part.length}-call sub-chunk:`, formatRpcError(e2))
             out.push(...part.map(() => ({ status: 'failure' as const })))
           }
         }

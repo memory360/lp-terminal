@@ -8,7 +8,7 @@
 // frontend to keep using its client-side fallback until the first pass lands.
 import { currentChain } from './chains'
 import { log, PORT, TUNE } from './config'
-import { usingPrivateRpc } from './rpc'
+import { formatRpcError, usingPrivateRpc } from './rpc'
 import { backfillV3, syncV2, tailV3 } from './catalog'
 import { computeTvlFor, ensureTokenMeta, reprice, sweepState } from './state'
 import { gtCycle } from './stats'
@@ -110,6 +110,6 @@ process.on('SIGTERM', () => {
 })
 
 boot().catch((e) => {
-  log('FATAL boot:', e)
+  log('FATAL boot:', formatRpcError(e))
   process.exit(1)
 })
