@@ -8,6 +8,7 @@ import { requireEvmChain } from '../src/lib/chains'
 import { PORT, log, now } from './config'
 import { db, kvGet, poolCounts, virtualsCount } from './store'
 import { computeTvlFor, ensureTokenMeta, sweepState } from './state'
+import { gtPools } from './stats'
 
 const JSONH = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -66,6 +67,7 @@ const ORDER: Record<string, string> = {
 type PoolOut = Record<string, unknown>
 
 const hydrateAfter = new Map<string, number>()
+const statsAfter = new Map<string, number>()
 
 async function getPools(params: Params) {
   const { where, args } = poolsWhere(params)
@@ -85,10 +87,22 @@ async function getPools(params: Params) {
     .all(...args, limit, offset) as Record<string, unknown>[]
   let rows = readRows()
 
+  // Top-list stats cover only part of the catalog. Fill creation time,
+  // volume and liquidity for the exact visible page via GeckoTerminal's
+  // public multi-address endpoint; uncovered pools cool down for 30 minutes.
+  const stamp = Date.now()
+  const missingStats = rows
+    .filter((row) => row.stats_source == null && (statsAfter.get(row.address as string) ?? 0) <= stamp)
+    .map((row) => row.address as string)
+  if (missingStats.length) {
+    for (const address of missingStats) statsAfter.set(address, stamp + 1_800_000)
+    await gtPools(missingStats)
+    rows = readRows()
+  }
+
   // Full catalog, bounded work: hydrate only rows a user actually requested.
   // Failed public-RPC reads cool down for five minutes instead of retrying on
   // every frontend poll.
-  const stamp = Date.now()
   const missing = rows
     .filter((row) => row.state_updated == null && (hydrateAfter.get(row.address as string) ?? 0) <= stamp)
     .map((row) => row.address as string)

@@ -95,3 +95,15 @@ export async function gtCycle(): Promise<void> {
   }
   log(`[stats] gt cycle: ${matched}/${seen} list entries matched catalog`)
 }
+
+/** Hydrate stats for the exact page the user requested. GeckoTerminal's
+ * public multi-pool endpoint accepts 30 addresses on the free API. */
+export async function gtPools(addrs: string[]): Promise<number> {
+  let matched = 0
+  for (let i = 0; i < addrs.length; i += 30) {
+    const chunk = addrs.slice(i, i + 30)
+    const j = await gtJson(`${GT}/networks/${net}/pools/multi/${chunk.join(',')}`)
+    for (const pool of j?.data ?? []) if (ingest(pool)) matched++
+  }
+  return matched
+}
