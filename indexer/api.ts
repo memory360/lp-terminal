@@ -7,6 +7,7 @@ import { currentChain } from './chains'
 import { requireEvmChain } from '../src/lib/chains'
 import { PORT, log, now } from './config'
 import { db, kvGet, poolCounts, virtualsCount } from './store'
+import { computeTvlFor, ensureTokenMeta, sweepState } from './state'
 
 const JSONH = { 'content-type': 'application/json; charset=utf-8' }
 
@@ -30,7 +31,7 @@ function poolsWhere(params: Params): { where: string; args: (string | number)[] 
 
   const minTvl = Number(params.get('min_tvl'))
   if (Number.isFinite(minTvl) && minTvl > 0) {
-    clauses.push('s.tvl_usd >= ?')
+    clauses.push('COALESCE(s.tvl_usd, st.liq_usd) >= ?')
     args.push(minTvl)
   }
 
@@ -57,14 +58,16 @@ function poolsWhere(params: Params): { where: string; args: (string | number)[] 
 }
 
 const ORDER: Record<string, string> = {
-  tvl: 'ORDER BY (s.tvl_usd IS NULL), s.tvl_usd DESC',
+  tvl: 'ORDER BY (COALESCE(s.tvl_usd, st.liq_usd) IS NULL), COALESCE(s.tvl_usd, st.liq_usd) DESC',
   vol: 'ORDER BY (st.vol24h_usd IS NULL), st.vol24h_usd DESC',
   created: 'ORDER BY (p.created_block IS NULL), p.created_block DESC, p.pair_index DESC',
 }
 
 type PoolOut = Record<string, unknown>
 
-function getPools(params: Params) {
+const hydrateAfter = new Map<string, number>()
+
+async function getPools(params: Params) {
   const { where, args } = poolsWhere(params)
   const order = ORDER[params.get('sort') ?? 'tvl'] ?? ORDER.tvl
   const limit = Math.min(Math.max(Number(params.get('limit')) || 100, 1), 500)
@@ -72,8 +75,7 @@ function getPools(params: Params) {
 
   const base = `FROM pools p LEFT JOIN pool_state s ON s.address = p.address LEFT JOIN pool_stats st ON st.address = p.address ${where}`
   const count = (db.prepare(`SELECT COUNT(*) AS n ${base}`).get(...args) as { n: number }).n
-  const rows = db
-    .prepare(
+  const readRows = () => db.prepare(
       `SELECT p.address, p.proto, p.token0, p.token1, p.fee_ppm, p.tick_spacing, p.created_block,
               s.sqrt_price, s.tick, s.liquidity, s.reserve0, s.reserve1, s.total_supply,
               s.tvl_usd, s.tvl_approx, s.updated AS state_updated,
@@ -81,6 +83,22 @@ function getPools(params: Params) {
        ${base} ${order} LIMIT ? OFFSET ?`,
     )
     .all(...args, limit, offset) as Record<string, unknown>[]
+  let rows = readRows()
+
+  // Full catalog, bounded work: hydrate only rows a user actually requested.
+  // Failed public-RPC reads cool down for five minutes instead of retrying on
+  // every frontend poll.
+  const stamp = Date.now()
+  const missing = rows
+    .filter((row) => row.state_updated == null && (hydrateAfter.get(row.address as string) ?? 0) <= stamp)
+    .map((row) => row.address as string)
+  if (missing.length) {
+    for (const address of missing) hydrateAfter.set(address, stamp + 300_000)
+    await ensureTokenMeta(missing)
+    await sweepState(missing)
+    computeTvlFor(missing)
+    rows = readRows()
+  }
 
   const tokenAddrs = new Set<string>()
   const pools: PoolOut[] = rows.map((r) => {
@@ -185,7 +203,7 @@ function getTokenTypes(type?: string) {
 }
 
 export function startApi(): void {
-  const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now()
     try {
       const url = new URL(req.url ?? '/', 'http://indexer')
@@ -196,7 +214,7 @@ export function startApi(): void {
       }
       let body: unknown
       let cache = 'public, max-age=10'
-      if (url.pathname === '/api/pools') body = getPools(url.searchParams)
+      if (url.pathname === '/api/pools') body = await getPools(url.searchParams)
       else if (url.pathname === '/api/tokens') body = getTokens(url.searchParams)
       else if (url.pathname === '/api/chain') body = getChainInfo()
       else if (url.pathname === '/api/type/virtuals') body = getTokenTypes('virtuals')
