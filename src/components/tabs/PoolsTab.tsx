@@ -374,7 +374,7 @@ function PoolRow(props: {
                 ●
               </span>
             )}
-            <b>
+            <b className="pool-pair" title={`${t0.symbol}/${t1.symbol}`}>
               {t0.symbol}/{t1.symbol}
             </b>
             {p.protocol !== 'up33' && <ProtoBadge proto={p.protocol} mini />}
@@ -523,7 +523,7 @@ function TokenInfoCell({ token, virtualsSet }: { token: PoolsData['tokens'][stri
   return (
     <div className="token-info">
       <span>
-        <b>{token.symbol}</b>
+        <b className="token-symbol" title={token.symbol}>{token.symbol}</b>
         {isVirtuals && <span className="virtuals-badge" title="Issued through Virtuals Protocol">VIRTUALS</span>}
       </span>
       <span className="pair-sub">

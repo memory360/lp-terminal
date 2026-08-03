@@ -729,6 +729,16 @@ th.sortable.on { color: var(--acc); }
 .mydot { color: var(--green); margin-right: 4px; }
 
 /* pools table: compact two-line cells */
+.pool-pair,
+.token-symbol {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.pool-pair { max-width: 28ch; }
+.token-symbol { max-width: 20ch; }
 .pair-sub {
   font-size: 0.8em;
   color: var(--dim);
