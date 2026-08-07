@@ -48,16 +48,17 @@ export function AmountRow(props: {
   dec: number
   onMax: (v: string) => void
   disabled?: boolean
+  insufficient?: boolean
   note?: string
 }) {
   const { t } = useTranslation()
   return (
     <div className="form-row">
       <span className="lbl">{props.sym}</span>
-      <NumInput value={props.value} onChange={props.onChange} disabled={props.disabled} width={220} />
+      <NumInput value={props.value} onChange={props.onChange} disabled={props.disabled} width={220} invalid={props.insufficient} />
       {props.bal !== undefined && (
         <>
-          <span className="dim mono-sm">
+          <span className={`${props.insufficient ? 'red' : 'dim'} mono-sm`}>
             {t('common.bal')} {fmtAmount(props.bal, props.dec)}
           </span>
           <button
@@ -69,6 +70,7 @@ export function AmountRow(props: {
           </button>
         </>
       )}
+      {props.insufficient && <span className="red mono-sm">{t('common.insufficient')}</span>}
       {props.note && <span className="amber mono-sm">{props.note}</span>}
     </div>
   )
@@ -81,10 +83,11 @@ export function NumInput(props: {
   placeholder?: string
   disabled?: boolean
   width?: number
+  invalid?: boolean
 }) {
   return (
     <input
-      className="input"
+      className={`input ${props.invalid ? 'invalid' : ''}`}
       style={props.width ? { width: props.width } : undefined}
       inputMode="decimal"
       autoComplete="off"

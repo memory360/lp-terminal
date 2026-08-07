@@ -885,6 +885,13 @@ export function AddCl({
 
   const below = ticks ? pool.tick < ticks.lower : false
   const above = ticks ? pool.tick >= ticks.upper : false
+  const amt0 = safeParse(a0, t0.decimals)
+  const amt1 = safeParse(a1, t1.decimals)
+  const bal0 = bal.data?.[pool.token0.toLowerCase()]
+  const bal1 = bal.data?.[pool.token1.toLowerCase()]
+  const insufficient0 = bal0 !== undefined && amt0 > bal0
+  const insufficient1 = bal1 !== undefined && amt1 > bal1
+  const insufficient = insufficient0 || insufficient1
 
   const link = (v: string, is0: boolean) => {
     if (is0) setA0(v)
@@ -911,8 +918,6 @@ export function AddCl({
 
   const sim = useMemo(() => {
     if (!ticks) return null
-    const amt0 = safeParse(a0, t0.decimals)
-    const amt1 = safeParse(a1, t1.decimals)
     if (amt0 === 0n && amt1 === 0n) return null
     const liq = getLiquidityForAmounts(
       pool.sqrtPriceX96,
@@ -934,7 +939,7 @@ export function AddCl({
       upUsd,
       wethUsd,
     })
-  }, [ticks, a0, a1, pool, t0.decimals, t1.decimals, stat, upUsd, wethUsd])
+  }, [ticks, a0, a1, amt0, amt1, pool, t0.decimals, t1.decimals, stat, upUsd, wethUsd])
 
   const mint = async () => {
     if (!user || !ticks) return
@@ -1100,26 +1105,28 @@ export function AddCl({
             sym={t0.symbol}
             value={a0}
             onChange={(v) => link(v, true)}
-            bal={bal.data?.[pool.token0.toLowerCase()]}
+            bal={bal0}
             dec={t0.decimals}
             onMax={(v) => link(v, true)}
             disabled={above}
+            insufficient={insufficient0}
             note={above ? t('add.aboveNote') : undefined}
           />
           <AmountRow
             sym={t1.symbol}
             value={a1}
             onChange={(v) => link(v, false)}
-            bal={bal.data?.[pool.token1.toLowerCase()]}
+            bal={bal1}
             dec={t1.decimals}
             onMax={(v) => link(v, false)}
             disabled={below}
+            insufficient={insufficient1}
             note={below ? t('add.belowNote') : undefined}
           />
           <SimLine sim={sim} emitless={pool.protocol === 'univ3'} />
           <div className="form-row">
-            <Btn busy={busy} onClick={mint} disabled={!user || !ticks}>
-              {t('add.mint')}
+            <Btn busy={busy} onClick={mint} disabled={!user || !ticks || insufficient}>
+              {insufficient ? t('common.insufficientBalance') : t('add.mint')}
             </Btn>
             <span className="dim mono-sm">
               {pool.protocol === 'univ3' ? t('add.mintHintUni') : t('add.mintHintUp33')}

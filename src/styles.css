@@ -285,6 +285,8 @@ button, input, select {
   width: 100%;
 }
 .input:focus { border-color: var(--acc-dim); }
+.input.invalid { border-color: var(--red); color: var(--red); }
+.input.invalid:focus { border-color: var(--red); }
 .input::placeholder { color: var(--placeholder); }
 
 .dim { color: var(--dim); }
