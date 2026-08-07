@@ -47,6 +47,10 @@ export type ZapPlan = {
   nativeIn: boolean
   /** erc20 actually spent (WETH when nativeIn) */
   erc20In: Address
+  /** when tokenIn is not in the pool, first swap it into this pool token */
+  preErc20In?: Address
+  preAmountIn?: bigint
+  preRoute?: KyberRouteData
   inIs0: boolean
   amountIn: bigint
   swapIn: bigint
@@ -110,7 +114,7 @@ function solveSwap(amountIn: bigint, rho: number, rate: number): bigint {
  */
 export async function planZap(args: {
   target: ZapTarget
-  tokenIn: Address // NATIVE | pool.token0 | pool.token1
+  tokenIn: Address // NATIVE | pool.token0 | pool.token1 | chain stable
   amountIn: bigint
   signal?: AbortSignal
 }): Promise<ZapPlan> {
@@ -121,7 +125,22 @@ export async function planZap(args: {
   const nativeIn = isNat(tokenIn)
   const erc20In = nativeIn ? chain.anchors.weth : tokenIn
   const inIs0 = low(erc20In) === low(pool.token0)
-  if (!inIs0 && low(erc20In) !== low(pool.token1)) throw new Error(t('zap.errNotInPool'))
+  if (!inIs0 && low(erc20In) !== low(pool.token1)) {
+    if (low(erc20In) !== low(chain.anchors.stable)) throw new Error(t('zap.errNotInPool'))
+    const baseIn = pool.token0
+    const preRoute = await kyberRoute(erc20In, baseIn, amountIn, { signal: args.signal, chain: chain.kyberChain })
+    const baseAmountIn = BigInt(preRoute.routeSummary.amountOut)
+    const basePlan = await planZap({ target, tokenIn: baseIn, amountIn: baseAmountIn, signal: args.signal })
+    return {
+      ...basePlan,
+      tokenIn,
+      nativeIn: false,
+      erc20In,
+      preErc20In: erc20In,
+      preAmountIn: amountIn,
+      preRoute,
+    }
+  }
   const otherErc20 = inIs0 ? pool.token1 : pool.token0
 
   const { rho, spot } = needAndSpot(target, inIs0)
@@ -223,6 +242,18 @@ export function zapStages(plan: ZapPlan, target: ZapTarget, t0: TokenInfo, t1: T
   const tOut = plan.inIs0 ? t1 : t0
   const spender = target.kind === 'v2' ? t('zap.spenderRouter') : t('zap.spenderNpm')
   const stages: ZapStage[] = []
+  if (plan.preRoute) {
+    stages.push({ kind: 'approveIn', label: t('zap.stApproveKyber', { sym: 'USDG' }) })
+    stages.push({
+      kind: 'swap',
+      label: t('zap.stSwap', {
+        amt: fmtAmount(plan.preAmountIn ?? 0n, 6),
+        sym: 'USDG',
+        out: fmtAmount(BigInt(plan.preRoute.routeSummary.amountOut), tIn.decimals),
+        outSym: tIn.symbol,
+      }),
+    })
+  }
   if (plan.nativeIn) stages.push({
     kind: 'wrap',
     label: t('zap.stWrap', {
@@ -275,6 +306,57 @@ export async function executeZap(args: {
   const chain = requireEvmChain(getCurrentChain())
   const up33 = chain.up33
   const pool = poolOf(target)
+  if (plan.preRoute && plan.preErc20In && plan.preAmountIn) {
+    const baseIn = plan.inIs0 ? pool.token0 : pool.token1
+    const baseToken = plan.inIs0 ? t0 : t1
+    let got = 0n
+    if (!(await ensureAllowance(plan.preErc20In, user, ENV.kyberRouter, plan.preAmountIn, 'USDG'))) {
+      return { ok: false, failedAt: 0, actualOut: 0n }
+    }
+    let fresh
+    try {
+      fresh = await kyberRoute(plan.preErc20In, baseIn, plan.preAmountIn, { chain: chain.kyberChain })
+    } catch (e) {
+      txlog.push('err', t('zap.halt', { msg: t('zap.haltRequote', { err: (e as Error).message }) }))
+      return { ok: false, failedAt: 1, actualOut: 0n }
+    }
+    const freshOut = BigInt(fresh.routeSummary.amountOut)
+    if (freshOut < applySlippage(BigInt(plan.preRoute.routeSummary.amountOut), slipBps + 50)) {
+      txlog.push('err', t('zap.halt', { msg: t('zap.haltPriceMoved', { now: fmtAmount(freshOut, baseToken.decimals), prev: fmtAmount(BigInt(plan.preRoute.routeSummary.amountOut), baseToken.decimals) }) }))
+      return { ok: false, failedAt: 1, actualOut: 0n }
+    }
+    if (low(fresh.routeSummary.tokenOut) !== low(baseIn)) {
+      txlog.push('err', t('zap.halt', { msg: t('zap.haltTokenOut', { addr: fresh.routeSummary.tokenOut }) }))
+      return { ok: false, failedAt: 1, actualOut: 0n }
+    }
+    let tx
+    try {
+      tx = await buildGatedKyberTx({
+        routeSummary: fresh.routeSummary,
+        sender: user,
+        recipient: user,
+        slippageBps: slipBps,
+        amountIn: plan.preAmountIn,
+        nativeIn: false,
+      })
+    } catch (e) {
+      txlog.push('err', t('zap.halt', { msg: (e as Error).message }))
+      return { ok: false, failedAt: 1, actualOut: 0n }
+    }
+    const h = await step(
+      t('zap.stSwap', {
+        amt: fmtAmount(plan.preAmountIn, 6),
+        sym: 'USDG',
+        out: fmtAmount(freshOut, baseToken.decimals),
+        outSym: baseToken.symbol,
+      }) + ' [KYBER]',
+      () => sendTransaction(wagmiConfig, { to: tx.to, data: tx.data, value: tx.value, chainId: chain.id }),
+      { onSuccess: (rcpt) => (got = receivedOf(rcpt, baseIn, user)) },
+    )
+    if (!h || got === 0n) return { ok: false, failedAt: 1, actualOut: 0n }
+    const next = await planZap({ target, tokenIn: baseIn, amountIn: got })
+    return executeZap({ ...args, plan: next, startAt: 0, actualOut: 0n })
+  }
   const stages = zapStages(plan, target, t0, t1)
   const tIn = plan.inIs0 ? t0 : t1
   const otherErc20 = plan.inIs0 ? pool.token1 : pool.token0

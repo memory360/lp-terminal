@@ -37,7 +37,7 @@ export function ZapPanel(props: {
 
   const hasWeth = [t0.address.toLowerCase(), t1.address.toLowerCase()].includes(chain.anchors.weth.toLowerCase())
   const wethIs0 = t0.address.toLowerCase() === chain.anchors.weth.toLowerCase()
-  const [sel, setSel] = useState<'0' | '1' | 'eth'>(hasWeth ? (wethIs0 ? '0' : '1') : '0')
+  const [sel, setSel] = useState<'0' | '1' | 'eth' | 'usdg'>(hasWeth ? (wethIs0 ? '0' : '1') : '0')
   const [amtStr, setAmtStr] = useState('')
   const [amount, setAmount] = useState(0n)
   const [slip, setSlip] = useState(100)
@@ -48,11 +48,12 @@ export function ZapPanel(props: {
   const [runKey, setRunKey] = useState('')
   const [done, setDone] = useState(false)
 
-  const tokenInAddr: Address = sel === 'eth' ? NATIVE : sel === '0' ? t0.address : t1.address
+  const stableToken: TokenInfo = { address: chain.anchors.stable, symbol: 'USDG', decimals: 6 }
+  const tokenInAddr: Address = sel === 'eth' ? NATIVE : sel === 'usdg' ? chain.anchors.stable : sel === '0' ? t0.address : t1.address
   const tIn: TokenInfo =
     sel === 'eth'
       ? { address: NATIVE, symbol: chain.nativeCurrency.symbol, decimals: chain.nativeCurrency.decimals, native: true }
-      : sel === '0' ? t0 : t1
+      : sel === 'usdg' ? stableToken : sel === '0' ? t0 : t1
   const wethInputUsd =
     (sel === 'eth' || tIn.address.toLowerCase() === chain.anchors.weth.toLowerCase()) && props.wethUsd
       ? Number(amtStr) * props.wethUsd
@@ -69,7 +70,7 @@ export function ZapPanel(props: {
     return () => clearTimeout(h)
   }, [amtStr, tIn.decimals])
 
-  const bal = useBalances(user, [t0.address, t1.address, ...(hasWeth ? [NATIVE as Address] : [])])
+  const bal = useBalances(user, [t0.address, t1.address, chain.anchors.stable, ...(hasWeth ? [NATIVE as Address] : [])])
   const balIn = bal.data?.[tokenInAddr.toLowerCase()]
   const spendable = balIn === undefined ? undefined : sel === 'eth' ? (balIn > ETH_GAS_BUFFER ? balIn - ETH_GAS_BUFFER : 0n) : balIn
   const insufficient = spendable !== undefined && amount > spendable
@@ -89,6 +90,7 @@ export function ZapPanel(props: {
     queryFn: ({ signal }) => planZap({ target, tokenIn: tokenInAddr, amountIn: amount, signal }),
   })
   const p = running || canResume ? runPlan : (plan.data ?? null)
+  const planInToken = p ? (p.inIs0 ? t0 : t1) : tIn
   const stages = useMemo(() => (p ? zapStages(p, target, t0, t1) : []), [p, target, t0, t1])
   const tOut = p ? (p.inIs0 ? t1 : t0) : null
 
@@ -217,6 +219,9 @@ export function ZapPanel(props: {
             {chain.nativeCurrency.symbol}
           </button>
         )}
+        <button className={`chip ${sel === 'usdg' ? 'on' : ''}`} onClick={() => setSel('usdg')} disabled={running}>
+          USDG
+        </button>
         <NumInput value={amtStr} onChange={setAmtStr} disabled={running} width={220} />
         <span className="zap-usd mono-sm">
           {Number.isFinite(wethInputUsd) && wethInputUsd > 0 ? t('zap.usdValue', { usd: fmtUsd(wethInputUsd) }) : ''}
@@ -269,11 +274,11 @@ export function ZapPanel(props: {
             <span className="sk">{t('zap.split')}</span>
             <span className="sv">
               {p.swapIn === 0n
-                ? t('zap.keepAll', { amt: fmtAmount(p.keep, tIn.decimals), sym: p.inIs0 ? t0.symbol : t1.symbol })
+                ? t('zap.keepAll', { amt: fmtAmount(p.keep, planInToken.decimals), sym: planInToken.symbol })
                 : t('zap.keepSwap', {
-                    keep: fmtAmount(p.keep, tIn.decimals),
-                    swap: fmtAmount(p.swapIn, tIn.decimals),
-                    sym: p.inIs0 ? t0.symbol : t1.symbol,
+                    keep: fmtAmount(p.keep, planInToken.decimals),
+                    swap: fmtAmount(p.swapIn, planInToken.decimals),
+                    sym: planInToken.symbol,
                   })}
             </span>
             <span className="sd">{p.swapIn === 0n ? t('zap.splitSdSingle') : t('zap.splitSd')}</span>
