@@ -608,11 +608,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 }
 .tsel-btn:hover { border-color: var(--acc-dim); }
 .tsel-pop {
-  position: absolute;
   z-index: 9001;
-  top: calc(100% + 4px);
-  left: 0;
-  width: 300px;
   max-height: 320px;
   overflow-y: auto;
   background: var(--inset);
@@ -628,15 +624,15 @@ table.tbl { width: 100%; border-collapse: collapse; }
   cursor: pointer;
 }
 .tsel-item:hover { background: var(--panel2); color: var(--acc); }
-.tsel-item.verified { border-left: 3px solid var(--green); padding-left: 7px; }
+.tsel-item.verified { border-left: 3px solid var(--green-dim); padding-left: 7px; }
 .tsel-item .verified-sym,
-.tsel-item .verified-addr { color: var(--green); }
+.tsel-item .verified-addr { color: var(--green-dim); }
 .tsel-item .verified-badge {
   display: inline-block;
   margin-left: 4px;
   padding: 0 4px;
   border-radius: 3px;
-  background: var(--green);
+  background: var(--green-dim);
   color: var(--bg);
   font-size: 10px;
   font-weight: bold;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Address } from 'viem'
 import { ADDR } from '../config/addresses'
@@ -11,6 +11,9 @@ import type { TokenInfo } from '../types'
  *  in the token registry (observed live for USDG, WETH, etc.). */
 const VERIFIED_ADDRS = new Set<string>([ADDR.WETH.toLowerCase(), ADDR.USDG.toLowerCase()])
 
+const POP_W = 300
+const POP_MAX_H = 320
+
 export function TokenSelect(props: {
   list: TokenInfo[]
   value: TokenInfo
@@ -20,6 +23,9 @@ export function TokenSelect(props: {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [popStyle, setPopStyle] = useState<React.CSSProperties>({})
+
   const filtered = useMemo(() => {
     const ex = props.exclude?.toLowerCase()
     let l = props.list.filter((t) => t.address.toLowerCase() !== ex)
@@ -30,15 +36,27 @@ export function TokenSelect(props: {
     return l.slice(0, 80)
   }, [props.list, props.exclude, q])
 
+  // position: fixed escapes parent overflow-y:auto containers — absolute does not
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - r.bottom
+    const showBelow = spaceBelow >= Math.min(POP_MAX_H, 200) || spaceBelow >= r.top
+    const top = showBelow ? r.bottom + 4 : Math.max(4, r.top - POP_MAX_H - 4)
+    let left = r.left
+    if (left + POP_W > window.innerWidth) left = window.innerWidth - POP_W - 8
+    setPopStyle({ position: 'fixed', top, left, width: POP_W })
+  }, [open])
+
   return (
     <div className="tsel">
-      <button className="tsel-btn" onClick={() => setOpen(!open)}>
+      <button ref={btnRef} className="tsel-btn" onClick={() => setOpen(!open)}>
         {props.value.symbol} ▾
       </button>
       {open && (
         <>
           <div className="tsel-backdrop" onClick={() => setOpen(false)} />
-          <div className="tsel-pop">
+          <div className="tsel-pop" style={popStyle}>
             <div className="filter">
               <input
                 className="input"
