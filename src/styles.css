@@ -628,6 +628,19 @@ table.tbl { width: 100%; border-collapse: collapse; }
   cursor: pointer;
 }
 .tsel-item:hover { background: var(--panel2); color: var(--acc); }
+.tsel-item.verified { border-left: 3px solid var(--green); padding-left: 7px; }
+.tsel-item .verified-sym,
+.tsel-item .verified-addr { color: var(--green); }
+.tsel-item .verified-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--green);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: bold;
+}
 .tsel-backdrop { position: fixed; inset: 0; z-index: 20; }
 
 /* ---------- log ---------- */
