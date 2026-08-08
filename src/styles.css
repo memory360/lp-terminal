@@ -609,7 +609,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .tsel-btn:hover { border-color: var(--acc-dim); }
 .tsel-pop {
   position: absolute;
-  z-index: 30;
+  z-index: 9001;
   top: calc(100% + 4px);
   left: 0;
   width: 300px;
@@ -641,7 +641,7 @@ table.tbl { width: 100%; border-collapse: collapse; }
   font-size: 10px;
   font-weight: bold;
 }
-.tsel-backdrop { position: fixed; inset: 0; z-index: 20; }
+.tsel-backdrop { position: fixed; inset: 0; z-index: 9000; }
 
 /* ---------- log ---------- */
 .logpanel {
