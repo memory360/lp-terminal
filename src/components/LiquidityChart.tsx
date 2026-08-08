@@ -51,11 +51,14 @@ export function LiquidityChart(props: {
   const activeLiquidity = pool.liquidity + pool.stakedLiquidity
   const points = liquidityPoints(view.lower, view.upper, pool.tick, activeLiquidity, ticks)
   const bars = liquidityBars(view.lower, view.upper, points, BAR_COUNT)
-  const max = Math.max(...bars.map((p) => p.liquidity), 1)
+  const max = chartMax(bars.map((p) => p.liquidity))
   const x = (tick: number) => 16 + ((tick - view.lower) / (view.upper - view.lower)) * 688
   const y = (liquidity: bigint | number) => 176 - (Number(liquidity) / max) * 154
   const path = points.reduce(
-    (d, p, i) => `${d}${i === 0 ? `M${x(p.tick)},176 L${x(p.tick)},${y(p.liquidity)}` : ` H${x(p.tick)} V${y(p.liquidity)}`}`,
+    (d, p, i) => {
+      const top = Math.max(18, y(Math.min(Number(p.liquidity), max)))
+      return `${d}${i === 0 ? `M${x(p.tick)},176 L${x(p.tick)},${top}` : ` H${x(p.tick)} V${top}`}`
+    },
     '',
   ) + ` L704,176 Z`
   const selectedLeft = selected ? x(Math.max(view.lower, selected.lower)) : 0
@@ -79,7 +82,7 @@ export function LiquidityChart(props: {
         {bars.map((bar) => {
           const left = x(bar.lower)
           const right = x(bar.upper)
-          const top = y(bar.liquidity)
+          const top = Math.max(18, y(Math.min(bar.liquidity, max)))
           return (
             <rect
               key={bar.lower}
@@ -194,6 +197,14 @@ export function chartView(
 
   if (viewUpper - viewLower < selectedWidth) return { lower: selected.lower, upper: selected.upper }
   return { lower: viewLower, upper: viewUpper }
+}
+
+export function chartMax(values: number[]) {
+  const sorted = values.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b)
+  if (sorted.length === 0) return 1
+  const p90 = sorted[Math.floor((sorted.length - 1) * 0.9)]
+  const peak = sorted[sorted.length - 1]
+  return Math.max(p90, peak * 0.72, 1)
 }
 
 export function liquidityBars(lower: number, upper: number, points: LiquidityPoint[], count: number) {
