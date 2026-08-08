@@ -15,6 +15,7 @@ type LiquidityPoint = { tick: number; liquidity: bigint }
 
 const VIEW_PCT = 0.35 // enough padding around the widest ±30% preset
 const BAR_COUNT = 36
+const SELECTED_VIEW_MULTIPLIER = 2.3
 
 export function LiquidityChart(props: {
   pool: ClPool
@@ -44,20 +45,21 @@ export function LiquidityChart(props: {
     )
 
   const { lower, upper, ticks } = query.data
+  const view = chartView(lower, upper, pool.tick, selected)
   // UP33/Sliipstream track staked liquidity separately; include it so the chart
   // reflects the real depth available to swappers and incoming LPs.
   const activeLiquidity = pool.liquidity + pool.stakedLiquidity
-  const points = liquidityPoints(lower, upper, pool.tick, activeLiquidity, ticks)
-  const bars = liquidityBars(lower, upper, points, BAR_COUNT)
+  const points = liquidityPoints(view.lower, view.upper, pool.tick, activeLiquidity, ticks)
+  const bars = liquidityBars(view.lower, view.upper, points, BAR_COUNT)
   const max = Math.max(...bars.map((p) => p.liquidity), 1)
-  const x = (tick: number) => 16 + ((tick - lower) / (upper - lower)) * 688
+  const x = (tick: number) => 16 + ((tick - view.lower) / (view.upper - view.lower)) * 688
   const y = (liquidity: bigint | number) => 176 - (Number(liquidity) / max) * 154
   const path = points.reduce(
     (d, p, i) => `${d}${i === 0 ? `M${x(p.tick)},176 L${x(p.tick)},${y(p.liquidity)}` : ` H${x(p.tick)} V${y(p.liquidity)}`}`,
     '',
   ) + ` L704,176 Z`
-  const selectedLeft = selected ? x(Math.max(lower, selected.lower)) : 0
-  const selectedRight = selected ? x(Math.min(upper, selected.upper)) : 0
+  const selectedLeft = selected ? x(Math.max(view.lower, selected.lower)) : 0
+  const selectedRight = selected ? x(Math.min(view.upper, selected.upper)) : 0
   const price = (tick: number) => fmtNum(tickToPrice(tick, t0.decimals, t1.decimals), 5)
 
   return (
@@ -97,9 +99,9 @@ export function LiquidityChart(props: {
         )}
         <path d={path} className="liq-area" />
         <line x1={x(pool.tick)} y1="18" x2={x(pool.tick)} y2="176" className="liq-current" />
-        <text x="16" y="198" textAnchor="start">{price(lower)}</text>
+        <text x="16" y="198" textAnchor="start">{price(view.lower)}</text>
         <text x={x(pool.tick)} y="198" textAnchor="middle">{price(pool.tick)}</text>
-        <text x="704" y="198" textAnchor="end">{price(upper)}</text>
+        <text x="704" y="198" textAnchor="end">{price(view.upper)}</text>
         {selected && selectedRight > selectedLeft && (
           <text x={(selectedLeft + selectedRight) / 2} y="212" textAnchor="middle" className="liq-range-label">
             {fmtNum(tickToPrice(selected.lower, t0.decimals, t1.decimals), 5)} – {fmtNum(tickToPrice(selected.upper, t0.decimals, t1.decimals), 5)}
@@ -174,6 +176,24 @@ export function liquidityPoints(lower: number, upper: number, current: number, a
   }
   points.push({ tick: upper, liquidity: points.at(-1)?.liquidity ?? 0n })
   return points
+}
+
+export function chartView(
+  lower: number,
+  upper: number,
+  current: number,
+  selected?: { lower: number; upper: number } | null,
+) {
+  if (!selected || selected.lower <= lower || selected.upper >= upper) return { lower, upper }
+
+  const selectedWidth = Math.max(selected.upper - selected.lower, 1)
+  const width = selectedWidth * SELECTED_VIEW_MULTIPLIER
+  const center = Math.min(Math.max(current, selected.lower), selected.upper)
+  const viewLower = Math.max(lower, center - width / 2)
+  const viewUpper = Math.min(upper, center + width / 2)
+
+  if (viewUpper - viewLower < selectedWidth) return { lower: selected.lower, upper: selected.upper }
+  return { lower: viewLower, upper: viewUpper }
 }
 
 export function liquidityBars(lower: number, upper: number, points: LiquidityPoint[], count: number) {
