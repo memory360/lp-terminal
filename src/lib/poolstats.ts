@@ -5,6 +5,7 @@
 //            side (≈$) or the WETH side × WETH price derived from DexScreener.
 import { requireEvmChain, type ChainAdapter } from '../lib/chains'
 import { ENV } from '../config/env'
+import { pickDsTokenUsd, type DsPair } from './tokenPrice'
 import type { Pool, V2Pool } from '../types'
 
 export type PoolStat = {
@@ -68,6 +69,17 @@ async function fetchDexscreener(
     }
   }
   return { stats, wethUsd }
+}
+
+/** venue USD price of a token — its most-liquid robinhood pair on dexscreener */
+export async function fetchDsTokenUsd(token: string, signal?: AbortSignal): Promise<number> {
+  const root = ENV.proxied ? '/dexscreener' : 'https://api.dexscreener.com'
+  const r = await fetch(`${root}/latest/dex/tokens/${token}`, { signal })
+  if (!r.ok) throw new Error(`dexscreener ${r.status}`)
+  const j = (await r.json()) as { pairs?: DsPair[] }
+  const price = pickDsTokenUsd(j?.pairs ?? [], token)
+  if (price === null) throw new Error('no liquid dexscreener pair prices this token')
+  return price
 }
 
 async function fetchV2Subgraph(

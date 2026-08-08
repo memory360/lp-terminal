@@ -10,12 +10,13 @@ import { shortAddr } from '../lib/format'
 import { txlog } from '../lib/txlog'
 import type { ReactNode } from 'react'
 
-export type TabId = 'pools' | 'positions' | 'swap' | 'liquidity'
+export type TabId = 'pools' | 'positions' | 'swap' | 'liquidity' | 'bridge'
 const TABS = [
   { id: 'pools', labelKey: 'hdr.pools', key: '1' },
   { id: 'positions', labelKey: 'hdr.positions', key: '2' },
   { id: 'swap', labelKey: 'hdr.swap', key: '3' },
   { id: 'liquidity', labelKey: 'hdr.liquidity', key: '4' },
+  { id: 'bridge', labelKey: 'hdr.bridge', key: '5' },
 ] as const
 
 export function Header(props: { tab: TabId; onTab: (t: TabId) => void; chainControl: ReactNode }) {

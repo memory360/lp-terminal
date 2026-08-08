@@ -101,6 +101,28 @@ export async function kyberBuild(
 
 export type KyberToken = { address: Address; symbol: string; decimals: number; name?: string }
 
+/** Fee-free Kyber USD valuation. */
+export async function kyberUsdValue(
+  tokenIn: Address,
+  tokenOut: Address,
+  amountIn: bigint,
+  signal?: AbortSignal,
+): Promise<number> {
+  const url = new URL(`${api()}/routes`, location.origin)
+  url.searchParams.set('tokenIn', tokenIn)
+  url.searchParams.set('tokenOut', tokenOut)
+  url.searchParams.set('amountIn', amountIn.toString())
+  url.searchParams.set('gasInclude', 'false')
+
+  const response = await fetch(url, { headers: HEADERS, signal })
+  const payload = await response.json()
+  const value = Number(payload?.data?.routeSummary?.amountOutUsd)
+  if (!response.ok || payload?.code !== 0 || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`Kyber valuation failed: ${payload?.message ?? response.status}`)
+  }
+  return value
+}
+
 /** Registered token list from ks-setting (seed for the picker). */
 export async function kyberTokenList(chainId = 4663): Promise<KyberToken[]> {
   const base = ENV.proxied ? '/kyber-setting' : 'https://ks-setting.kyberswap.com'

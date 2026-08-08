@@ -34,6 +34,46 @@ export function fmtAmount(v: bigint, decimals: number, sig = 5): string {
   return fmtNum(Number(formatUnits(v, decimals)), sig)
 }
 
+/** exact decimal-point shift for scientific-notation pastes — string math only,
+ *  a float round-trip would corrupt exactly the tiny amounts this serves */
+function shiftDecimal(int: string, frac: string, exp: number): string | null {
+  if (!Number.isFinite(exp) || Math.abs(exp) > 30) return null
+  const digits = int + frac
+  const point = int.length + exp
+  if (point <= 0) return `0.${'0'.repeat(-point)}${digits}`
+  if (point >= digits.length) return digits + '0'.repeat(point - digits.length)
+  return `${digits.slice(0, point)}.${digits.slice(point)}`
+}
+
+/** normalize user-typed token amounts (the web3 small-amount conventions):
+ *  whitespace stripped, decimal comma → dot, pasted scientific notation
+ *  ("5e-5") expanded exactly, and the fraction CLAMPED to the token's decimals
+ *  — text the token cannot represent must not sit in the box silently quoting
+ *  zero. Returns the normalized string, or null when the text is not an amount
+ *  (caller keeps the previous value, the controlled input swallows the key). */
+export function sanitizeAmountInput(raw: string, decimals: number): string | null {
+  let s = raw
+    .replace(/\s+/g, '')
+    // Chinese-IME width normalization: with an IME active the digit/dot keys
+    // emit fullwidth ０-９／。／．／，— rejecting just the dot turned a typed
+    // "0。05" into "005", a 100× amount error, so map instead of reject
+    .replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+    .replace(/[。．]/g, '.')
+    .replace('，', ',')
+    .replace(',', '.')
+  if (s === '') return ''
+  const sci = s.match(/^(\d*)\.?(\d*)[eE]([+-]?\d+)$/)
+  if (sci && (sci[1] || sci[2])) {
+    const shifted = shiftDecimal(sci[1], sci[2], Number(sci[3]))
+    if (shifted === null) return null
+    s = shifted
+  }
+  if (!/^\d*\.?\d*$/.test(s)) return null
+  const [int, frac = ''] = s.split('.')
+  if (frac.length > decimals) return decimals === 0 ? int : `${int}.${frac.slice(0, decimals)}`
+  return s
+}
+
 /** compact amount for dense table cells: 24.9M, 338.4K, 12.4, 0.0421 */
 export function fmtCompact(x: number): string {
   if (!Number.isFinite(x)) return '—'

@@ -21,6 +21,7 @@ import { SolanaPoolsTab } from './components/tabs/SolanaPoolsTab'
 import { SolanaPositionsTab } from './components/tabs/SolanaPositionsTab'
 import { SolanaSwapTab } from './components/tabs/SolanaSwapTab'
 import { SwapTab } from './components/tabs/SwapTab'
+import { BridgeTab } from './components/tabs/BridgeTab'
 import { Btn } from './components/ui'
 import { isEvmChain, isSolanaChain } from './lib/chains'
 import { useRpcHealth, resetRpcHealth } from './hooks/useRpcHealth'
@@ -53,12 +54,12 @@ export default function App() {
   )
 }
 
-const KEYS: Record<string, TabId> = { '1': 'pools', '2': 'positions', '3': 'swap', '4': 'liquidity' }
+const KEYS: Record<string, TabId> = { '1': 'pools', '2': 'positions', '3': 'swap', '4': 'liquidity', '5': 'bridge' }
 
 const validTab = (h: string): TabId | null => {
   if (h === 'limit') return 'swap' // LIMIT mode is a sub-view of the swap tab
   if (h === 'lab') return 'pools' // hidden component lab rides the pools slot
-  return (['pools', 'positions', 'swap', 'liquidity'] as const).includes(h as TabId) ? (h as TabId) : null
+  return (['pools', 'positions', 'swap', 'liquidity', 'bridge'] as const).includes(h as TabId) ? (h as TabId) : null
 }
 
 function ChainControl() {
@@ -172,6 +173,7 @@ function Shell() {
         {rpcHealth.status !== 'checking' && tab === 'positions' && (isEvmChain(chain) ? <PositionsTab /> : <SolanaPositionsTab />)}
         {rpcHealth.status !== 'checking' && tab === 'swap' && (isEvmChain(chain) ? <SwapTab /> : <SolanaSwapTab />)}
         {rpcHealth.status !== 'checking' && tab === 'liquidity' && (isSolanaChain(chain) ? <SolanaLiquidityTab /> : <div className="dim">EVM liquidity management coming soon.</div>)}
+        {rpcHealth.status !== 'checking' && tab === 'bridge' && (isEvmChain(chain) ? <BridgeTab /> : <div className="dim">Bridge is only available on Robinhood Chain.</div>)}
       </div>
       {(switching || indexerSwitching) && (
         <div className="chain-switch-overlay">

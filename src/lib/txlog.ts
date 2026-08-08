@@ -8,6 +8,7 @@ export type LogLine = {
   kind: LogKind
   text: string
   hash?: string
+  href?: string
   action?: LogAction
 }
 

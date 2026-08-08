@@ -1,8 +1,16 @@
-import { readContract, waitForTransactionReceipt } from 'wagmi/actions'
-import type { Address, Hex, TransactionReceipt } from 'viem'
-import { erc20Abi, parseAbi, parseEventLogs, zeroAddress } from 'viem'
-import { writeContract } from 'wagmi/actions'
-import { wagmiConfig } from '../config/wagmi'
+import {
+  BaseError,
+  UserRejectedRequestError,
+  erc20Abi,
+  parseAbi,
+  parseEventLogs,
+  type Address,
+  type Hex,
+  type ReplacementReason,
+  type TransactionReceipt,
+} from 'viem'
+import { readContract, waitForTransactionReceipt, writeContract } from 'wagmi/actions'
+import { wagmiConfig, type ConfiguredChainId } from '../config/wagmi'
 import { queryClient } from '../config/query'
 import { getCurrentChain } from '../hooks/useChain'
 import { requireEvmChain } from './chains'
@@ -23,7 +31,7 @@ const REVERT_HINTS: [RegExp, () => string][] = [
   [/Transaction too old/i, () => t('tx.hintDeadline')],
 ]
 
-function shortErr(e: unknown): string {
+export function shortErr(e: unknown): string {
   const anyE = e as any
   const m: string = anyE?.shortMessage ?? anyE?.message ?? String(e)
   const first = m.split('\n')[0]
@@ -55,38 +63,109 @@ export function invalidateAll() {
   void queryClient.invalidateQueries()
 }
 
+/** why a step returned null — lets multi-step flows tailor their advice
+ *  (an on-chain revert is actionable; a wallet rejection is a user choice) */
+export type StepFailWhy = 'rejected' | 'reverted' | 'error'
+
+function stepFailWhy(e: unknown): StepFailWhy {
+  if (e instanceof BaseError && e.walk((x) => x instanceof UserRejectedRequestError)) return 'rejected'
+  return /reject|denied|declin/i.test(String((e as Error)?.message ?? '')) ? 'rejected' : 'error'
+}
+
 /**
  * Run one transaction step: wallet prompt -> pending -> receipt.
- * Returns the tx hash on success, null on rejection/revert (callers should stop a
- * multi-step flow on null). opts.onSuccess sees the confirmed receipt.
+ * Returns the confirmed receipt on success, null on rejection/revert (callers
+ * should stop a multi-step flow on null; opts.onFail hears which kind of null).
+ * opts.onSuccess sees the same receipt. opts.chainId/explorer let bridge steps
+ * run on a remote origin chain — every other flow defaults to the current chain.
  */
 export async function step(
   label: string,
   send: () => Promise<Hex>,
-  opts?: { onSuccess?: (rcpt: TransactionReceipt) => void },
-): Promise<Hex | null> {
+  opts?: {
+    /** fires the instant the tx is broadcast (hash in hand), before it confirms
+     *  — lets a caller persist a prominent "pending" entry that survives reload */
+    onSubmitted?: (hash: Hex) => void
+    onReplaced?: (oldHash: Hex, newHash: Hex, reason: ReplacementReason) => void
+    onSuccess?: (rcpt: TransactionReceipt) => void
+    onFail?: (why: StepFailWhy) => void
+    chainId?: ConfiguredChainId
+    explorer?: string
+  },
+): Promise<TransactionReceipt | null> {
   const id = txlog.push('pending', t('tx.confirm', { label }))
+  const chainId = opts?.chainId ?? (wagmiConfig.chains.find((c) => c.id === getCurrentChain().id)?.id as ConfiguredChainId)
+  const href = (hash: Hex) => (opts?.explorer ? `${opts.explorer}/tx/${hash}` : undefined)
+  let activeHash: Hex | undefined
   try {
-    const chain = getCurrentChain()
     const hash = await send()
-    txlog.update(id, { text: t('tx.pending', { label }), hash })
-    const rcpt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId: chain.id })
-    if (rcpt.status !== 'success') {
-      txlog.update(id, { kind: 'err', text: t('tx.reverted', { label }), hash })
+    activeHash = hash
+    txlog.update(id, { text: t('tx.pending', { label }), hash, href: href(hash) })
+    try {
+      opts?.onSubmitted?.(hash)
+    } catch (e) {
+      txlog.push('err', `${label} — ${shortErr(e)}`, hash)
+    }
+    let replacementReason: ReplacementReason | null = null
+    const rcpt = await waitForTransactionReceipt(wagmiConfig, {
+      hash,
+      chainId,
+      // Robinhood blocks in ~100ms; viem's 4s default would leave a confirmed
+      // swap looking pending for seconds (the "is it stuck?" reload trigger).
+      // Remote bridge chains keep the default cadence.
+      pollingInterval: chainId === 4663 ? 800 : undefined,
+      onReplaced: ({ reason, replacedTransaction, transaction }) => {
+        const oldHash = replacedTransaction.hash
+        activeHash = transaction.hash
+        replacementReason = reason
+        txlog.update(id, { hash: activeHash, href: href(activeHash) })
+        try {
+          opts?.onReplaced?.(oldHash, activeHash, reason)
+        } catch (e) {
+          txlog.push('err', `${label} — ${shortErr(e)}`, activeHash)
+        }
+      },
+    })
+    activeHash = rcpt.transactionHash
+    if (replacementReason && replacementReason !== 'repriced') {
+      txlog.update(id, {
+        kind: 'err',
+        text: `${label} — ${replacementReason}`,
+        hash: activeHash,
+        href: href(activeHash),
+      })
       invalidateAll()
+      opts?.onFail?.(replacementReason === 'cancelled' ? 'rejected' : 'error')
       return null
     }
-    txlog.update(id, { kind: 'ok', text: t('tx.ok', { label, n: rcpt.blockNumber.toString() }), hash })
+    if (rcpt.status !== 'success') {
+      txlog.update(id, { kind: 'err', text: t('tx.reverted', { label }), hash: activeHash, href: href(activeHash) })
+      invalidateAll()
+      opts?.onFail?.('reverted')
+      return null
+    }
+    txlog.update(id, {
+      kind: 'ok',
+      text: t('tx.ok', { label, n: rcpt.blockNumber.toString() }),
+      hash: activeHash,
+      href: href(activeHash),
+    })
     invalidateAll()
     try {
       opts?.onSuccess?.(rcpt)
-    } catch {
-      /* follow-up is best-effort */
+    } catch (e) {
+      txlog.push('err', `${label} — ${shortErr(e)}`, activeHash)
     }
-    return hash
+    return rcpt
   } catch (e) {
-    txlog.update(id, { kind: 'err', text: `${label} — ${shortErr(e)}` })
+    txlog.update(id, {
+      kind: 'err',
+      text: `${label} — ${shortErr(e)}`,
+      hash: activeHash,
+      href: activeHash ? href(activeHash) : undefined,
+    })
     invalidateAll()
+    opts?.onFail?.(stepFailWhy(e))
     return null
   }
 }
@@ -112,8 +191,8 @@ export function receivedOf(rcpt: TransactionReceipt, token: Address, to: Address
 export function offerSwapClaimedUp(user: Address) {
   return (rcpt: TransactionReceipt) => {
     const chain = requireEvmChain(getCurrentChain())
-    const up = chain.anchors.up ?? zeroAddress
-    if (up === zeroAddress) return
+    const up = chain.anchors.up ?? '0x0000000000000000000000000000000000000000'
+    if (up === '0x0000000000000000000000000000000000000000') return
     const total = receivedOf(rcpt, up, user)
     if (total === 0n) return
     txlog.push('info', t('tx.received', { amt: fmtAmount(total, 18) }), rcpt.transactionHash, {
@@ -126,6 +205,8 @@ export function offerSwapClaimedUp(user: Address) {
   }
 }
 
+export type AllowanceResult = 'sufficient' | 'approved'
+
 /** Approve `spender` for exactly `amount` if current allowance is lower. */
 export async function ensureAllowance(
   token: Address,
@@ -133,7 +214,7 @@ export async function ensureAllowance(
   spender: Address,
   amount: bigint,
   symbol: string,
-): Promise<boolean> {
+): Promise<AllowanceResult | null> {
   const chain = getCurrentChain()
   const current = await readContract(wagmiConfig, {
     abi: erc20Abi,
@@ -142,7 +223,7 @@ export async function ensureAllowance(
     args: [owner, spender],
     chainId: chain.id,
   } as const)
-  if (current >= amount) return true
+  if (current >= amount) return 'sufficient'
   const h = await step(t('tx.approve', { sym: symbol }), () =>
     writeContract(wagmiConfig, {
       abi: erc20Abi,
@@ -152,7 +233,7 @@ export async function ensureAllowance(
       chainId: chain.id,
     } as never),
   )
-  return h !== null
+  return h ? 'approved' : null
 }
 
 export function deadline(secondsFromNow = 1200): bigint {

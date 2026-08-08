@@ -1,10 +1,14 @@
 // Robinhood-only compatibility exports for component labs and maintenance
 // scripts. Runtime application code must use ChainAdapter instead.
+import type { Address } from 'viem'
 import { robinhood } from '../chains/robinhood'
 import { requireEvmChain } from '../lib/chains'
 
 const rh = requireEvmChain(robinhood)
 const up33 = rh.up33!
+
+/** Native currency sentinel used by Kyber / bridge providers */
+export const NATIVE = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' as Address
 
 export const ADDR = {
   ...up33,

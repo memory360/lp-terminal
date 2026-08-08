@@ -1,5 +1,6 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { fallback, http, type Transport } from 'wagmi'
+import { arbitrum, base, mainnet, optimism } from 'wagmi/chains'
 import { customRpc, getCachedRpcHealth } from '../lib/rpcPref'
 import { robinhood, supportedChains } from './chain'
 import { ENV, rpcUrlForChain } from './env'
@@ -54,10 +55,48 @@ function buildTransport(chainId: number): Transport {
     : http(publicRpc, { batch: true })
 }
 
+// Remote chains exist only as BRIDGE counterparties (origin-side sends +
+// balance reads). They use their public RPCs; no custom RPC or env override.
+const remoteTransport = (publics: string[]): Transport =>
+  fallback(publics.map((u) => http(u, { batch: true })))
+
+const remoteChains = [mainnet, arbitrum, base, optimism] as const
+
+const configuredChains = [robinhood, ...supportedChains.filter((c) => c.id !== robinhood.id), ...remoteChains]
+
 export const wagmiConfig = getDefaultConfig({
   appName: 'UP33 Terminal',
   projectId: ENV.wcProjectId,
-  chains: supportedChains as unknown as readonly [typeof robinhood, ...typeof supportedChains],
-  transports: Object.fromEntries(supportedChains.map((c) => [c.id, buildTransport(c.id)])),
+  chains: configuredChains as unknown as readonly [typeof robinhood, ...typeof configuredChains],
+  transports: {
+    ...Object.fromEntries(supportedChains.map((c) => [c.id, buildTransport(c.id)])),
+    [mainnet.id]: remoteTransport([
+      'https://ethereum-rpc.publicnode.com',
+      'https://eth.drpc.org',
+      'https://eth.merkle.io',
+    ]),
+    [arbitrum.id]: remoteTransport([
+      'https://arb1.arbitrum.io/rpc',
+      'https://arbitrum-one-rpc.publicnode.com',
+    ]),
+    [base.id]: remoteTransport([
+      'https://mainnet.base.org',
+      'https://base-rpc.publicnode.com',
+    ]),
+    [optimism.id]: remoteTransport([
+      'https://mainnet.optimism.io',
+      'https://optimism-rpc.publicnode.com',
+    ]),
+  },
   ssr: false,
 })
+
+/** a chain id this wagmi config can actually serve (bridge steps come from
+ *  provider APIs as plain numbers — validate before handing them to wagmi) */
+export type ConfiguredChainId = (typeof wagmiConfig)['chains'][number]['id']
+
+export function asConfiguredChain(id: number): ConfiguredChainId {
+  const known = wagmiConfig.chains.find((c) => c.id === id)
+  if (!known) throw new Error(`chain ${id} is not configured in this terminal`)
+  return known.id
+}
