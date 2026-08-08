@@ -68,7 +68,7 @@ export function LiquidityChart(props: {
           {query.isFetching ? <span className="spin">▮</span> : t('add.liquidityRefresh')}
         </button>
       </div>
-      <svg viewBox="0 0 720 230" role="img" aria-label={t('add.liquidityTitle')}>
+      <svg viewBox="0 0 720 214" role="img" aria-label={t('add.liquidityTitle')}>
         <line x1="16" y1="176" x2="704" y2="176" className="liq-axis" />
         <line x1="16" y1="102" x2="704" y2="102" className="liq-grid" />
         {selected && selectedRight > selectedLeft && (
@@ -101,7 +101,7 @@ export function LiquidityChart(props: {
         <text x={x(pool.tick)} y="198" textAnchor="middle">{price(pool.tick)}</text>
         <text x="704" y="198" textAnchor="end">{price(upper)}</text>
         {selected && selectedRight > selectedLeft && (
-          <text x={(selectedLeft + selectedRight) / 2} y="220" textAnchor="middle" className="liq-range-label">
+          <text x={(selectedLeft + selectedRight) / 2} y="212" textAnchor="middle" className="liq-range-label">
             {fmtNum(tickToPrice(selected.lower, t0.decimals, t1.decimals), 5)} – {fmtNum(tickToPrice(selected.upper, t0.decimals, t1.decimals), 5)}
           </text>
         )}
