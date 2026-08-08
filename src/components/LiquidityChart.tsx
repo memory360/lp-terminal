@@ -11,8 +11,10 @@ import { Btn } from './ui'
 
 type TickLiquidity = { tick: number; net: bigint }
 type Distribution = { lower: number; upper: number; ticks: TickLiquidity[] }
+type LiquidityPoint = { tick: number; liquidity: bigint }
 
 const VIEW_PCT = 0.35 // enough padding around the widest ±30% preset
+const BAR_COUNT = 36
 
 export function LiquidityChart(props: {
   pool: ClPool
@@ -46,9 +48,10 @@ export function LiquidityChart(props: {
   // reflects the real depth available to swappers and incoming LPs.
   const activeLiquidity = pool.liquidity + pool.stakedLiquidity
   const points = liquidityPoints(lower, upper, pool.tick, activeLiquidity, ticks)
-  const max = Math.max(...points.map((p) => Number(p.liquidity)), 1)
+  const bars = liquidityBars(lower, upper, points, BAR_COUNT)
+  const max = Math.max(...bars.map((p) => p.liquidity), 1)
   const x = (tick: number) => 16 + ((tick - lower) / (upper - lower)) * 688
-  const y = (liquidity: bigint) => 176 - (Number(liquidity) / max) * 148
+  const y = (liquidity: bigint | number) => 176 - (Number(liquidity) / max) * 154
   const path = points.reduce(
     (d, p, i) => `${d}${i === 0 ? `M${x(p.tick)},176 L${x(p.tick)},${y(p.liquidity)}` : ` H${x(p.tick)} V${y(p.liquidity)}`}`,
     '',
@@ -65,12 +68,29 @@ export function LiquidityChart(props: {
           {query.isFetching ? <span className="spin">▮</span> : t('add.liquidityRefresh')}
         </button>
       </div>
-      <svg viewBox="0 0 720 210" role="img" aria-label={t('add.liquidityTitle')}>
+      <svg viewBox="0 0 720 230" role="img" aria-label={t('add.liquidityTitle')}>
         <line x1="16" y1="176" x2="704" y2="176" className="liq-axis" />
         <line x1="16" y1="102" x2="704" y2="102" className="liq-grid" />
         {selected && selectedRight > selectedLeft && (
+          <rect x={selectedLeft} y="18" width={selectedRight - selectedLeft} height="158" className="liq-selected" />
+        )}
+        {bars.map((bar) => {
+          const left = x(bar.lower)
+          const right = x(bar.upper)
+          const top = y(bar.liquidity)
+          return (
+            <rect
+              key={bar.lower}
+              x={left + 1}
+              y={top}
+              width={Math.max(1, right - left - 2)}
+              height={176 - top}
+              className="liq-bar"
+            />
+          )
+        })}
+        {selected && selectedRight > selectedLeft && (
           <>
-            <rect x={selectedLeft} y="18" width={selectedRight - selectedLeft} height="158" className="liq-selected" />
             <line x1={selectedLeft} y1="18" x2={selectedLeft} y2="176" className="liq-selected-edge" />
             <line x1={selectedRight} y1="18" x2={selectedRight} y2="176" className="liq-selected-edge" />
           </>
@@ -80,6 +100,11 @@ export function LiquidityChart(props: {
         <text x="16" y="198" textAnchor="start">{price(lower)}</text>
         <text x={x(pool.tick)} y="198" textAnchor="middle">{price(pool.tick)}</text>
         <text x="704" y="198" textAnchor="end">{price(upper)}</text>
+        {selected && selectedRight > selectedLeft && (
+          <text x={(selectedLeft + selectedRight) / 2} y="220" textAnchor="middle" className="liq-range-label">
+            {fmtNum(tickToPrice(selected.lower, t0.decimals, t1.decimals), 5)} – {fmtNum(tickToPrice(selected.upper, t0.decimals, t1.decimals), 5)}
+          </text>
+        )}
       </svg>
       <div className="liq-chart-caption">{t('add.liquidityPair', { quote: t1.symbol, base: t0.symbol })}</div>
     </div>
@@ -132,7 +157,7 @@ async function fetchDistribution(pc: PublicClient, pool: ClPool): Promise<Distri
   }
 }
 
-export function liquidityPoints(lower: number, upper: number, current: number, active: bigint, ticks: TickLiquidity[]) {
+export function liquidityPoints(lower: number, upper: number, current: number, active: bigint, ticks: TickLiquidity[]): LiquidityPoint[] {
   const sorted = ticks.filter((x) => x.tick >= lower && x.tick <= upper).sort((a, b) => a.tick - b.tick)
   let liquidity = active
   for (const item of sorted) if (item.tick >= lower && item.tick <= current) liquidity -= item.net
@@ -149,4 +174,29 @@ export function liquidityPoints(lower: number, upper: number, current: number, a
   }
   points.push({ tick: upper, liquidity: points.at(-1)?.liquidity ?? 0n })
   return points
+}
+
+export function liquidityBars(lower: number, upper: number, points: LiquidityPoint[], count: number) {
+  const width = (upper - lower) / count
+  return Array.from({ length: count }, (_, i) => {
+    const barLower = lower + i * width
+    const barUpper = i === count - 1 ? upper : barLower + width
+    let weighted = 0
+    let covered = 0
+
+    for (let j = 0; j < points.length - 1; j++) {
+      const segLower = Math.max(barLower, points[j].tick)
+      const segUpper = Math.min(barUpper, points[j + 1].tick)
+      if (segUpper <= segLower) continue
+      const span = segUpper - segLower
+      weighted += Number(points[j].liquidity) * span
+      covered += span
+    }
+
+    return {
+      lower: barLower,
+      upper: barUpper,
+      liquidity: covered > 0 ? weighted / covered : 0,
+    }
+  })
 }

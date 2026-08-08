@@ -432,19 +432,21 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .stat .v { font-size: 1.25em; margin-top: 2px; }
 .stat .sub { color: var(--dim); font-size: 0.85em; margin-top: 2px; }
 
-.expander.cl-visual { display: grid; grid-template-columns: minmax(560px, 1.15fr) minmax(400px, 0.85fr); column-gap: 18px; }
+.expander.cl-visual { display: grid; grid-template-columns: 1fr; column-gap: 18px; }
 .expander.cl-visual > :not(.liq-chart):not(.liq-chart-state) { grid-column: 1; }
-.liq-chart, .liq-chart-state { grid-column: 2; grid-row: 1 / span 9; align-self: start; min-height: 230px; border: 1px solid var(--line-hi); background: var(--panel2); padding: 8px; }
+.liq-chart, .liq-chart-state { grid-column: 1; align-self: start; min-height: 300px; border: 1px solid var(--line-hi); border-radius: 6px; background: #050605; padding: 10px 12px; }
 .liq-chart-state { display: grid; place-items: center; }
 .liq-chart-head { display: flex; justify-content: space-between; align-items: center; color: var(--dim); font-size: 0.82em; text-transform: uppercase; }
 .liq-chart svg { display: block; width: 100%; height: auto; }
 .liq-chart text { fill: var(--dim); font-size: 11px; }
 .liq-axis { stroke: var(--line-hi); }
 .liq-grid { stroke: var(--line); }
-.liq-area { fill: color-mix(in srgb, var(--green) 32%, transparent); stroke: var(--green); stroke-width: 1; }
-.liq-selected { fill: color-mix(in srgb, var(--green) 14%, transparent); }
-.liq-selected-edge { stroke: var(--green); stroke-width: 2; }
-.liq-current { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 5 4; }
+.liq-bar { fill: color-mix(in srgb, var(--green) 50%, transparent); }
+.liq-area { fill: transparent; stroke: var(--green); stroke-width: 1; opacity: 0.6; }
+.liq-selected { fill: color-mix(in srgb, var(--green) 9%, transparent); }
+.liq-selected-edge { stroke: var(--green); stroke-width: 4; }
+.liq-current { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.liq-range-label { fill: var(--fg); font-size: 12px; }
 .liq-chart-caption { color: var(--dim); font-size: 0.78em; text-align: center; }
 @media (max-width: 1100px) {
   .expander.cl-visual { grid-template-columns: 1fr; }
